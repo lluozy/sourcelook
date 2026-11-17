@@ -143,4 +143,5 @@ node scripts/smoke-index.cjs  # 索引 / 大纲 / 定义 / 引用
 
 SourceLook 由 **Luozy** 开发；其中编辑器与索引部分移植自同作者的 KernelSight。
 
-项目以 MIT 许可发布。Monaco 为 MIT；tree-sitter 为 MIT。
+项目以 [Apache License 2.0](LICENSE) 发布，附带 [NOTICE](NOTICE) 归属声明。
+Monaco 为 MIT；tree-sitter 为 MIT。

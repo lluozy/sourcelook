@@ -2,6 +2,7 @@
     "name": "@local/sourcelook",
     "version": "1.5.109",
     "author": "Luozy",
+    "license": "Apache-2.0",
     "private": true,
     "type": "module",
     "description": "A full-window source reader and editor for the current Session workspace.",
