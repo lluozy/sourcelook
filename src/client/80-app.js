@@ -3079,6 +3079,21 @@
             remember(payload, { file: active, line });
             return;
           }
+          /* goto 标签：C 的标签是独立命名空间，源码里没有"定义"这回事。 */
+          if (defData?.status === 'label') {
+            const payload = {
+              title: `${word} · goto 标签`,
+              word,
+              kind: 'context',
+              items: [],
+              refs: [],
+              note: defData.reason || '这是 goto 标签,不是符号',
+              preview: { file: active, line },
+            };
+            showResults(payload);
+            remember(payload, { file: active, line });
+            return;
+          }
           /* 函数原型形参：原型不定义形参,实现在函数体里 —— 能给就跳到函数定义。 */
           if (defData?.status === 'protoParam') {
             const items = Array.isArray(defData.items) ? defData.items : [];

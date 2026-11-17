@@ -396,7 +396,10 @@ root.Lang.register('c', {
        不是符号 —— `__func__` 在内核里数万处，记成引用只会制造"零定义"噪声
        （2026-11-16）。查询侧另有 `symbols.builtinIdentifiers` 给说明屏。 */
     refIgnore: ['__func__', '__FUNCTION__', '__PRETTY_FUNCTION__', '__LINE__', '__FILE__',
-      '__DATE__', '__TIME__', '__COUNTER__', '__STDC__', '__STDC_VERSION__'],
+      '__DATE__', '__TIME__', '__COUNTER__', '__STDC__', '__STDC_VERSION__',
+      /* GNU 关键字别名：编译器认，源码树里没有定义（`__asm__ __volatile__(…)`）。 */
+      '__asm__', '__volatile__', '__inline__', '__restrict__', '__const__', '__signed__',
+      '__extension__', '__alignof__', '__typeof__', '__typeof'],
 
     /* E1 推导器的**词表**：工具从 `#define` 原文反推规则时，用它判断
        "宏体里哪一段是类型 / 哪些是存储类"。算法在 main/macro-derive.js，

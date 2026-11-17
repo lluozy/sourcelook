@@ -257,8 +257,11 @@ function isAttr(name) {
   return ATTR.has(name);
 }
 
+/* `__attribute_*__` 是 GCC 属性的统一命名模式（`__attribute_const__`、
+   `__attribute_pure__`…），逐个列进 ATTR 会永远漏；按模式抹掉。 */
 const ATTR_RE = new RegExp(
-  '\\b(' + Array.from(ATTR).filter((a) => /^[A-Za-z_]\w*$/.test(a)).join('|') + ')\\b', 'g'
+  '\\b(?:' + Array.from(ATTR).filter((a) => /^[A-Za-z_]\w*$/.test(a)).join('|')
+  + '|__attribute_\\w+__)\\b', 'g'
 );
 
 /**

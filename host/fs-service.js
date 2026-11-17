@@ -2880,7 +2880,12 @@ function typedefTargetOf(d, typeName, pool) {
 }
 
 function baseTypeName(typeExpr) {
-  return String(typeExpr || '')
+  let s = String(typeExpr || '');
+  /* 变量的 type 可能是**内联结构体全文**（`struct T { int x; }`）：
+     不先截掉正文，最后一个词会是 `}`，成员查询就会去 `}` 里找。 */
+  const brace = s.indexOf('{');
+  if (brace >= 0) s = s.slice(0, brace);
+  return s
     .replace(/\b(?:const|volatile|register|struct|union|enum)\b/g, ' ')
     .replace(/[*&]/g, ' ')
     .replace(/\[[^\]]*\]/g, ' ')
@@ -3795,6 +3800,17 @@ async function findDefinition(name, rel, options) {
       }
     }
   }
+
+  /* 0c) goto 标签：C 的标签是独立命名空间，不是符号。
+         `goto X;` 的目标和 `X:` 的定义都给说明屏，不落到"未解析"。 */
+  if (lineText !== '') {
+    const gotoHit = /\bgoto\s+([A-Za-z_]\w*)\s*;/.exec(lineText);
+    const labelDef = /^\s*([A-Za-z_]\w*)\s*:(?!:)/.exec(lineText);
+    if ((gotoHit !== null && gotoHit[1] === want) || (labelDef !== null && labelDef[1] === want)) {
+      return { ...result([]), status: 'label', reason: `\`${want}\` 是 goto 标签，不是符号` };
+    }
+  }
+
   /* 1) 类型位置：`struct sock *sk` 里点 sock → 类型定义。 */
   if (typeCtx) {
     const typeHits = mapSymbols(d, want, {

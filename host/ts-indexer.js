@@ -42,7 +42,7 @@ const LANG = globalThis.Lang;
 /* 解析器「内容版本」。**只要字段/成员/符号的提取逻辑有变化就改这里**：
    索引里会记下建它时用的版本，加载时不一致就标记过期（提示重建），
    避免"解析器修好了、磁盘上还是旧索引"这种静默错答（2026-11-15 位域成员问题）。 */
-const PARSER_REV = '2026-11-17-03';
+const PARSER_REV = '2026-11-17-04';
 
 let SYN = {};
 /* 词法块（lexical）：语言自己的"内容长相"判据（如汇编伪指令行数）住在表里。 */
@@ -729,10 +729,23 @@ const MACRO_BODY_SKIP = new Set([
  *
  * 这里对宏体做一次词法扫描：紧跟 `(` 的记成 call，其余 read。形参和关键字跳过。
  */
+function blankLiterals(text) {
+  const blank = (s) => String(s).replace(/[^\n]/g, ' ');
+  return String(text || '')
+    .replace(/"(?:\\.|[^"\\])*"/g, blank)
+    .replace(/'(?:\\.|[^'\\])*'/g, blank)
+    .replace(/\b0[xX][0-9a-fA-F]+[uUlL]*\b/g, blank)
+    .replace(/\b0[bB][01]+[uUlL]*\b/g, blank)
+    .replace(/\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[uUlLfF]*\b/g, blank);
+}
+
 function collectMacroBodyRefs(node, src, scope, out) {
   const val = field(node, NN.value);
   if (!val) return;
-  const text = textOf(val, src);
+  /* 宏体里的字面量（字符串 / 字符 / 数字）不是引用：`0x00000000` 的
+     `x00000000`、`"hello"` 的 `hello` 曾被记成引用（全量扫描里几十万条）。
+     等长抹成空格，行列仍对得上原文。 */
+  const text = blankLiterals(textOf(val, src));
   if (!text) return;
   const params = new Set();
   const list = field(node, NN.parameters) || childrenOfType(node, NN.preprocParams)[0];
@@ -743,7 +756,7 @@ function collectMacroBodyRefs(node, src, scope, out) {
   while ((m = re.exec(text)) !== null) {
     if (out.length >= MAX_REFS_PER_FILE) return;
     const name = m[0];
-    if (params.has(name) || MACRO_BODY_SKIP.has(name) || isAttr(name)) continue;
+    if (params.has(name) || MACRO_BODY_SKIP.has(name) || REF_IGNORE.has(name) || isAttr(name)) continue;
     /* 位置：宏体可能跨行（`\` 续行），按 `\n` 数出真实的行列。 */
     const before = text.slice(0, m.index);
     const nl = before.split('\n');

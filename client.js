@@ -18,9 +18,9 @@ window.__ModuleLoader__.load({
 
     const NS = 'sourcelook';
     const API = '/api/sourcelook';
-    const BUILD_TAG = '2026-11-17-b2';
+    const BUILD_TAG = '2026-11-17-b3';
     /* SourceLook 插件自身的版本号（与 DSH 无关）；关于对话框显示它。 */
-    const PLUGIN_VERSION = '1.5.115';
+    const PLUGIN_VERSION = '1.5.116';
     const HEADER = 'x-sourcelook';
 
     const MODE_KEY = 'sourcelook.mode';
@@ -8026,6 +8026,21 @@ window.createMonacoAdapter = createMonacoAdapter;
               items: [],
               refs: [],
               note: defData.note || '宏体里的形参 / 拼接片段,不是符号',
+              preview: { file: active, line },
+            };
+            showResults(payload);
+            remember(payload, { file: active, line });
+            return;
+          }
+          /* goto 标签：C 的标签是独立命名空间，源码里没有"定义"这回事。 */
+          if (defData?.status === 'label') {
+            const payload = {
+              title: `${word} · goto 标签`,
+              word,
+              kind: 'context',
+              items: [],
+              refs: [],
+              note: defData.reason || '这是 goto 标签,不是符号',
               preview: { file: active, line },
             };
             showResults(payload);
