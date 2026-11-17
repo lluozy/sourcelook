@@ -8,6 +8,9 @@ data/
 # 需要时按 HANDOFF-NEXT.md 的说明重建。
 tmp/
 
+# ---- 发布打包产物 ----
+dist/
+
 # ---- 依赖与系统垃圾 ----
 node_modules/
 *.log
