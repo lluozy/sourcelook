@@ -23,6 +23,19 @@
 "名字参数"这一个真符号，噪声消失。11 个名字的引用全部落到
 `include/trace/events/*.h` 的 `DECLARE_TRACE` / `DEFINE_EVENT` 声明上。
 
+**1.5.111（同日，语言索引 + CI + 英文防挤）**：
+① **JS / Python / Java 的符号索引其实早就写好、只是没验证过** —— 实测 JS 11 个符号全对、
+Python 13 个全对；Java 基本可用（字段同时记成 `member` 和 `variable`，有重复）。
+② **TypeScript 暂不索引**：JS grammar 会把 `opts: Options` 的类型注解当成参数名
+（多出 `parameter number` 这类假符号），而 TS grammar 的 AST 又有 `export_statement`
+包裹、参数是 `required_parameter(pattern:)`、类名是 `type_identifier`，规则表没适配 ——
+按"宁可不标也不标错"降级为近似符号。
+③ 英文文案审查：56 个键中英都齐，26 个英文明显更长；加防御 CSS（按钮/菜单项
+`nowrap`、标题/空态 `overflow-wrap: anywhere`）。
+④ **CI**：`.github/workflows/release.yml`，打 `v*` tag 自动构建 + 冒烟 + 打包 + 建 release。
+⑤ 更正：**宏展开浮层早已存在**（`showMacroAt` / `macroExpansionAt` / `macroPop`），
+README/HANDOFF 里"未移植"是旧说法。
+
 **1.5.110（同日，宏解析大修 + 扩样审计）**：把审计样本从 10 个网络/调度文件扩到
 22 个（加 drivers / fs / security / arch / block）。先修了审计脚本自己的假阳性
 （`0x1d6b` 被当成标识符 `x1d6b`，占了一半的"未解析"），再查真实缺口。

@@ -36,14 +36,14 @@ jobs:
         run: |
           set -eu
           VER="${GITHUB_REF_NAME#v}"
-          if [ -z "$VER" ] || [ "$VER" = "$GITHUB_REF_NAME" ]; then VER="dev"; fi
+          case "$VER" in v*|"") VER="dev";; esac
           PKG="SourceLook-$VER"
           mkdir -p "dist/$PKG"
-          cp index.js client.js icon.svg cordis.patch.yml package.json LICENSE NOTICE \
-             README.md README.en.md "dist/$PKG/"
+          cp index.js client.js icon.svg cordis.patch.yml package.json LICENSE NOTICE README.md README.en.md "dist/$PKG/"
           cp -r host renderer-lib vendor locale "dist/$PKG/"
           cd dist
-          zip -qr "$PKG.zip" "$PKG"
+          # runner 上没有 zip 命令，用 python3 的 zipfile（Ubuntu 必带）。
+          python3 -m zipfile -c "$PKG.zip" "$PKG"
           ls -lh "$PKG.zip"
 
       - name: Create release

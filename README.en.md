@@ -137,8 +137,9 @@ Restart DSH after a build (the host caches the plugin bundle revision).
 
 ## Known limitations
 
-- Symbol index covers **C / C++ / Rust / Go** only; JS / TS / Python get syntax
-  highlighting but no indexed symbols.
+- Symbol index covers **C / C++ / Rust / Go / Java / JavaScript / Python**;
+  TypeScript currently falls back to approximate symbols (its grammar node shapes are
+  not adapted yet — we would rather show nothing than a wrong symbol).
 - Semantic colouring paints declaration lines only — no scope resolver, so uses are left
   alone; the decoration is dropped while the buffer has unsaved edits.
 - One project root at a time; switching projects means re-selecting the directory.
