@@ -181,7 +181,10 @@ const TP_NAME_AT_0 = ['DECLARE_TRACE', 'DEFINE_TRACE',
 for (const n of TP_NAME_AT_0) {
   def(n, {
     decl: 0, declKind: 'variable', declType: 'struct tracepoint',
-    note: 'tracepoint：名字由宏拼成 __tracepoint_<name>，源码里只有这一处字面量'
+    /* 同一组宏还生成 `trace_<name>()`（`__DECLARE_TRACE` 展开的内联函数），
+       调用点 `trace_rss_stat(mm, …)` 需要它，否则只能落到"未解析"。 */
+    declare: [{ arg: 0, pattern: 'trace_$0', kind: 'function' }],
+    note: 'tracepoint：名字由宏拼成 __tracepoint_<name> 与 trace_<name>，源码里只有这一处字面量'
   });
 }
 const TP_NAME_AT_1 = ['DEFINE_EVENT', 'DEFINE_EVENT_FN', 'DEFINE_EVENT_PRINT',
@@ -189,6 +192,7 @@ const TP_NAME_AT_1 = ['DEFINE_EVENT', 'DEFINE_EVENT_FN', 'DEFINE_EVENT_PRINT',
 for (const n of TP_NAME_AT_1) {
   def(n, {
     decl: 1, declKind: 'variable', declType: 'struct tracepoint',
+    declare: [{ arg: 1, pattern: 'trace_$1', kind: 'function' }],
     note: 'tracepoint：第二个参数才是名字（第一个是 template）'
   });
 }

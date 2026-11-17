@@ -42,7 +42,7 @@ const LANG = globalThis.Lang;
 /* 解析器「内容版本」。**只要字段/成员/符号的提取逻辑有变化就改这里**：
    索引里会记下建它时用的版本，加载时不一致就标记过期（提示重建），
    避免"解析器修好了、磁盘上还是旧索引"这种静默错答（2026-11-15 位域成员问题）。 */
-const PARSER_REV = '2026-11-17-06';
+const PARSER_REV = '2026-11-17-07';
 
 let SYN = {};
 /* 词法块（lexical）：语言自己的"内容长相"判据（如汇编伪指令行数）住在表里。 */
@@ -2657,30 +2657,41 @@ function extract(text, relPath) {
 
   walk(tree.rootNode, null, null);
 
-  /* 属性宏自己的 `#define`：`blankAttributes()` 在解析前把这些名字抹成等长空格
-     （否则 `static int __init f(void)` 会被撕成"变量 __init + 定义 f"），
-     于是它们的**定义**也一起消失了 —— 用户点 `__read_mostly` 看到"没有定义"，
-     可内核明明 `#define` 了（实测 ATTR 96 个名字里 59 个真的有定义）。
-     这里按原文补一遍，只补 `#define <ATTR 名>`，不改变解析结果。 */
+  /* 原文补扫所有 `#define`：
+     ① 属性宏（`blankAttributes()` 在解析前抹掉了它们的名字，定义也一起消失）；
+     ② `#define` 写在 `{}` / `enum` 中间时 tree-sitter 整段变 ERROR，宏节点被吞
+        （`F_`、`SENSE_CODE`、`le32p_replace_bits` 都是这类）。
+     判据只有一条：**这个文件里还没有同名 macro 符号** —— 不管它写在哪。
+     扫描用的正则与原来相同（全文一遍），只是判据从 "ATTR 名" 放宽到 "未索引"。 */
   {
-    const ATTR_DEFINE_RE = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)/gm;
-    const seenAttr = new Set();
-    let m = ATTR_DEFINE_RE.exec(text);
+    const DEFINE_RE = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)/gm;
+    const seen = new Set(symbols.filter((s) => s.kind === KINDS.macro).map((s) => s.name));
+    /* 行号增量算：匹配位置单调递增，整文件只走一遍，避免每个 define 都 slice。 */
+    let cursor = 0;
+    let lineNo = 1;
+    const lineAt = (index) => {
+      while (cursor < index) {
+        if (text.charCodeAt(cursor) === 10) lineNo += 1;
+        cursor += 1;
+      }
+      return lineNo;
+    };
+    let m = DEFINE_RE.exec(text);
     while (m !== null) {
       const name = m[1];
-      if (KM.ATTR.has(name) && !seenAttr.has(name)) {
-        seenAttr.add(name);
+      if (!seen.has(name)) {
+        seen.add(name);
         symbols.push({
           name,
           kind: KINDS.macro,
-          line: text.slice(0, m.index).split('\n').length,
+          line: lineAt(m.index),
           config: null,
           type: '',
           parent: '',
-          source: 'attribute macro'
+          source: 'define scan'
         });
       }
-      m = ATTR_DEFINE_RE.exec(text);
+      m = DEFINE_RE.exec(text);
     }
   }
 
