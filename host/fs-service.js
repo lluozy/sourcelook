@@ -3310,6 +3310,10 @@ async function baseTypeOfExpr(d, expr, rel, line, pool, depth) {
   const level = Number(depth) || 0;
   const s0 = String(expr || '').trim();
   if (s0 === '' || level > 6) return '';
+  /* 表达式是宏名、且宏表给出了返回类型（`current` → `struct task_struct *`）：
+     直接用。没有这条，`current->real_cred` 之类的成员全部落到"未解析"。 */
+  const macroSpec = KM.MACROS.get(s0);
+  if (macroSpec && macroSpec.returns) return macroSpec.returns;
   let s = s0
     .replace(/^\((?:struct|union|enum)\s+[A-Za-z_]\w*\s*\*?\)\s*/, '')
     .replace(/^[&*]+/, '')
@@ -3802,12 +3806,24 @@ async function findDefinition(name, rel, options) {
   }
 
   /* 0c) goto 标签：C 的标签是独立命名空间，不是符号。
-         `goto X;` 的目标和 `X:` 的定义都给说明屏，不落到"未解析"。 */
+         `goto X;` 的目标和 `X:` 的定义都给说明屏，不落到"未解析"。
+         标签定义要求冒号后**没有表达式** —— `version:4;` 是位域，不是标签。 */
   if (lineText !== '') {
     const gotoHit = /\bgoto\s+([A-Za-z_]\w*)\s*;/.exec(lineText);
-    const labelDef = /^\s*([A-Za-z_]\w*)\s*:(?!:)/.exec(lineText);
+    const labelDef = /^\s*([A-Za-z_]\w*)\s*:(?!:)\s*(?:$|\/\/|\/\*)/.exec(lineText);
     if ((gotoHit !== null && gotoHit[1] === want) || (labelDef !== null && labelDef[1] === want)) {
       return { ...result([]), status: 'label', reason: `\`${want}\` 是 goto 标签，不是符号` };
+    }
+  }
+
+  /* 0d) 点到声明本身：同文件、同名字、同行的符号优先。
+        成员声明行（`struct iphdr { … version:4; }`）以前会落到全局同名，
+        点击自己的定义却跳到别的文件的同名符号。 */
+  if (rel !== '' && line > 0) {
+    const selfId = d.fileIdOf(rel);
+    if (selfId !== null) {
+      const own = d.symbolsOfFile(selfId).filter((s) => s.name === want && Number(s.line) === line);
+      if (own.length > 0) return result(own.map((s) => withScope(s, 'global')));
     }
   }
 

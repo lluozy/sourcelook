@@ -198,6 +198,11 @@ for (const n of ['EXPORT_TRACEPOINT_SYMBOL', 'EXPORT_TRACEPOINT_SYMBOL_GPL']) {
 
 /* `module_param_named(name, value, type, perm)` binds the user-visible `name`
    to the C variable `value`. */
+/* 返回固定类型的宏（表达式位置）：`current` → `struct task_struct *`。
+   没有这条规则，`current->real_cred` 这类成员引用全部落到"未解析"
+   （1.5.118 全量审计里 `real_cred` 等就是这批）。规则是数据，核心只查表。 */
+def('current', { returns: 'struct task_struct *' });
+
 def('module_param_named', { ref: [0, 1] });
 def('module_param_string', { ref: [0, 2] });
 def('module_param_array', { ref: [0, 3] });
