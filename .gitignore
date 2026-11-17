@@ -1,0 +1,15 @@
+# ---- 本地索引缓存（约 1.19 GB，绝不能入库）----
+data/
+*.crdb
+*.idx.json
+
+# ---- 调试脚本、抓包/截图、内核源码副本（约 194 MB）----
+# 回归脚本（tmp/*.cjs）依赖本机内核路径，随仓库发布意义不大；
+# 需要时按 HANDOFF-NEXT.md 的说明重建。
+tmp/
+
+# ---- 依赖与系统垃圾 ----
+node_modules/
+*.log
+.DS_Store
+Thumbs.db

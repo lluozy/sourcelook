@@ -1,0 +1,3 @@
+- insert:
+    - id: sourcelook
+      name: '@local/sourcelook'

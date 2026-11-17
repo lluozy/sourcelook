@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "SourceLook",
+    "description": "以全窗口源码阅读器浏览、阅读并编辑当前会话工作区，右侧可拉出 DSH 面板。"
+  }
+}
