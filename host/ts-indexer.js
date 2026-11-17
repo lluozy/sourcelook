@@ -42,7 +42,7 @@ const LANG = globalThis.Lang;
 /* 解析器「内容版本」。**只要字段/成员/符号的提取逻辑有变化就改这里**：
    索引里会记下建它时用的版本，加载时不一致就标记过期（提示重建），
    避免"解析器修好了、磁盘上还是旧索引"这种静默错答（2026-11-15 位域成员问题）。 */
-const PARSER_REV = '2026-11-17-05';
+const PARSER_REV = '2026-11-17-06';
 
 let SYN = {};
 /* 词法块（lexical）：语言自己的"内容长相"判据（如汇编伪指令行数）住在表里。 */
@@ -82,6 +82,8 @@ let DECL_PARAMS = new Set();
 let DECL_PARENT = false;
 /* 这些名字在引用里没有意义（Go 的空白标识符 `_`），不产引用。 */
 let REF_IGNORE = new Set();
+/* 前缀型忽略（编译器内建 `__builtin_*`）：个数无穷，按前缀比按名字表稳。 */
+let REF_IGNORE_PREFIXES = [];
 /* 方法归属：从 receiver 字段里的类型名推 parent（Go）。 */
 let RECEIVER = null;
 
@@ -120,6 +122,7 @@ function useTable(table) {
   DECL_PARAMS = new Set(SYN.declParamsNodes || []);
   DECL_PARENT = SYN.declParent === true;
   REF_IGNORE = new Set(SYN.refIgnore || []);
+  REF_IGNORE_PREFIXES = SYN.refIgnorePrefixes || [];
   RECEIVER = SYN.receiver || null;
 }
 useTable(LANG.defaultTable());
@@ -719,6 +722,15 @@ const MACRO_BODY_SKIP = new Set([
   'enum', 'goto', 'break', 'continue', 'NULL', 'true', 'false'
 ]);
 
+/** 引用里可以忽略的名字：语言表的精确名 / 前缀，加上所有语言关键字
+ *  （关键字在任何位置都不是符号；解析器在 `#if` 边界偶尔会把它当 identifier）。 */
+function isIgnoredRef(name) {
+  const s = String(name || '');
+  if (s === '') return true;
+  if (REF_IGNORE.has(s) || MACRO_BODY_SKIP.has(s)) return true;
+  return REF_IGNORE_PREFIXES.some((prefix) => prefix !== '' && s.startsWith(prefix));
+}
+
 /**
  * 宏体里的标识符也是**引用**。
  *
@@ -734,6 +746,8 @@ function blankLiterals(text) {
   return String(text || '')
     .replace(/"(?:\\.|[^"\\])*"/g, blank)
     .replace(/'(?:\\.|[^'\\])*'/g, blank)
+    /* 行注释：字符串先抹成空格，所以 `"http://"` 不会在这里被误伤。 */
+    .replace(/\/\/[^\n]*/g, blank)
     .replace(/\b0[xX][0-9a-fA-F]+[uUlL]*\b/g, blank)
     .replace(/\b0[bB][01]+[uUlL]*\b/g, blank)
     .replace(/\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[uUlLfF]*\b/g, blank);
@@ -757,7 +771,7 @@ function collectMacroBodyRefs(node, src, scope, out) {
   while ((m = re.exec(text)) !== null) {
     if (out.length >= MAX_REFS_PER_FILE) return;
     const name = m[0];
-    if (params.has(name) || MACRO_BODY_SKIP.has(name) || REF_IGNORE.has(name) || isAttr(name)) continue;
+    if (params.has(name) || isIgnoredRef(name) || isAttr(name)) continue;
     /* 位置：宏体可能跨行（`\` 续行），按 `\n` 数出真实的行列。 */
     const before = text.slice(0, m.index);
     const nl = before.split('\n');
@@ -1033,7 +1047,7 @@ function refsOf(tree, src, scope, typeNames, pkgNames) {
      * with a few thousand fewer edges. */
     const isTypeNode = isNT(node.type, 'typeIdentifier');
     if ((isNT(node.type, 'identifier') || isTypeNode) && !isDeclarationName(node)
-      && !isAttr(textOf(node, src)) && !REF_IGNORE.has(textOf(node, src))
+      && !isAttr(textOf(node, src)) && !isIgnoredRef(textOf(node, src))
       /* `reg##_##field` 的实参只是名字前缀，不是符号（见 gluedMacroArgOf）。 */
       && !(isTypeNode ? false : gluedMacroArgOf(node, src))
       && out.length < MAX_REFS_PER_FILE) {

@@ -400,6 +400,9 @@ root.Lang.register('c', {
       /* GNU 关键字别名：编译器认，源码树里没有定义（`__asm__ __volatile__(…)`）。 */
       '__asm__', '__volatile__', '__inline__', '__restrict__', '__const__', '__signed__',
       '__extension__', '__alignof__', '__typeof__', '__typeof', 'typeof'],
+    /* 编译器内建：`__builtin_constant_p` / `__builtin_expect` … 前缀相同、
+       个数无穷，按前缀忽略（2026-11-17）。 */
+    refIgnorePrefixes: ['__builtin_'],
 
     /* E1 推导器的**词表**：工具从 `#define` 原文反推规则时，用它判断
        "宏体里哪一段是类型 / 哪些是存储类"。算法在 main/macro-derive.js，
