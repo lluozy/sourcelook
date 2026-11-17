@@ -9,9 +9,9 @@ English ｜ [简体中文](README.md)
 
 ![SourceLook main window](docs/screenshots/01-overlay-p.png)
 
-No language server, no AST service. The plugin builds its own binary symbol index —
-measured on the Linux kernel: **67,834 files / 6,930,621 symbols**, loaded in
-**0.78 s**, every jump after that is in the millisecond range.
+No language server, no AST service. The plugin builds its own binary symbol index:
+**multi-threaded indexing** completes a large codebase in minutes, and every later
+open loads in about a second. Jumps and reference queries respond immediately.
 
 > This page covers the essentials. The [Chinese README](README.md) is the complete reference.
 
@@ -61,16 +61,13 @@ Not a regex that guesses at symbols — a language rule table:
 
 ### 4. Fast on big trees
 
-| Metric | Measured (Linux 5.10.239) |
-|---|---|
-| Full index build | 67,834 files, ~5 min (6 workers) |
-| Index load | 0.78 s |
-| Single click | 150–250 ms |
-| Symbols | 6,930,621 |
-
-The index is a binary format (`.crdb`), sorted by name and binary-searched; reference
-queries are filtered by kind and file **inside the index layer**, not after loading tens of
-thousands of rows into memory.
+- **Multi-threaded indexing**: the whole Linux kernel builds in minutes, runs in the
+  background and is cancellable
+- **Opens in about a second**: the index is a binary format (`.crdb`), sorted by name and
+  binary-searched
+- **Instant response on click**: reference queries are filtered by kind and file **inside
+  the index layer**, not after loading tens of thousands of rows into memory — common short
+  names included
 
 ---
 
@@ -99,8 +96,8 @@ plugin_manager install_bundle <path-to-SourceLook>
 Then enable it in DSH → Settings → Plugins. The plugin never modifies the DSH
 installation; it only registers one `/api/sourcelook` route and one full-window slot.
 
-On first open, click **Build index** in the status bar (about 5 minutes for the kernel,
-runs in the background, cancellable). Later opens load in under a second.
+On first open, click **Build index** in the status bar (multi-threaded, minutes for a large
+codebase, runs in the background and is cancellable). Later opens load in about a second.
 
 ---
 

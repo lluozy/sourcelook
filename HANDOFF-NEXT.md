@@ -23,6 +23,20 @@
 "名字参数"这一个真符号，噪声消失。11 个名字的引用全部落到
 `include/trace/events/*.h` 的 `DECLARE_TRACE` / `DEFINE_EVENT` 声明上。
 
+**1.5.110（同日，宏解析大修 + 扩样审计）**：把审计样本从 10 个网络/调度文件扩到
+22 个（加 drivers / fs / security / arch / block）。先修了审计脚本自己的假阳性
+（`0x1d6b` 被当成标识符 `x1d6b`，占了一半的"未解析"），再查真实缺口。
+
+发现的真问题：`include/drm/drm_atomic.h` 的 14 个带续行宏只认出 11 个，其中 3 个
+名字被错取成宏**参数名**（`old_connector_state`），`for_each_new_connector_in_state`
+整个丢失。根因是**多行宏体里的块注释**让 tree-sitter 的 `preproc_function_def`
+断开。修法：解析前把块注释**等长抹成空格**（逐字符扫描、跳过字符串，避免正则
+误吞 `"/*"`），行号列号不变。`PARSER_REV` → `2026-11-17-02`，已全量重建。
+
+扩样后审计：`calls=1335 unresolved=7`，剩下的是 4 个 `CONFIG_*`（Kconfig 符号，
+源码里本就没有定义，属设计内）+ 2 个宏参数里的成员名 `i_checksum_hi`（无接收者，
+无法准确解析，暂接受）+ 1 个已修的 DRM 宏。
+
 **1.5.108 / 1.5.109（同日，标题栏入口改成图标）**：D 模式的 SourceLook 入口从
 文字按钮换成图标，28×28 方形，位置仍按 DSH 菜单右边缘 +14px 计算（比文字版省
 约 60px 宽度），`title` / `aria-label` 保留"打开 SourceLook"。1.5.108 先用的是
@@ -395,6 +409,15 @@ UI：`src/client/80-app.js` 增加 `macroParam` / `protoParam` 两个 `status` �
 | `src/client/55-icons.js` | 删掉 1.5.108 临时加的 `case 'sourcelook'`（不再用内联 SVG） |
 | `src/client/styles.css` | 新增 `.sl-pill-icon`（20×20、圆角 4px、`pointer-events: none`） |
 | `package.json` / `src/client/00-header.js` | 版本 → 1.5.109（`BUILD_TAG` → `2026-11-17-a5`） |
+
+### 1.5.110 改动清单（宏解析 + 扩样审计）
+
+| 文件 | 改了什么 |
+|---|---|
+| `host/ts-indexer.js` | 新增 `maskBlockComments()`：解析前把块注释**等长抹成空格**（逐字符扫描，跳过字符串/字符字面量，正则做不到这点）；`parser.parse(blankAttributes(maskBlockComments(text)))`；`PARSER_REV` → `2026-11-17-02` |
+| `tmp/unresolved-audit.cjs` | ① 样本扩到 22 个文件（drivers / fs / security / arch / block）；② 抹掉十六进制常量，修掉 `0x1d6b → x1d6b` 这类假阳性 |
+| `tmp/dbg-drm*.cjs` | 一次性探针（定位"宏名被错取成参数名"并验证块注释是根因），可留作参考 |
+| `package.json` / `src/client/00-header.js` | 版本 → 1.5.110（`BUILD_TAG` → `2026-11-17-a6`） |
 
 ---
 
