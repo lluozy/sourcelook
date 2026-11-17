@@ -24,7 +24,7 @@
   *这个宏展开成什么*……点一下就问
 - 模式 2 里 DSH 就是右边的浮窗，读完代码原地追问，不用 Alt+Tab
 
-![DSH 面板就在右边](docs/screenshots/02-dsh-dock-c.png)
+![左边读代码，右边直接问 DSH](docs/screenshots/02-dsh-dock-c.png)
 
 ### 2. 点一下就有答案
 

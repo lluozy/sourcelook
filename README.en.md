@@ -31,7 +31,7 @@ live in one window**.
   one click to ask.
 - In mode 2 the DSH panel is already docked on the right, so you never leave the code.
 
-![DSH panel docked on the right](docs/screenshots/02-dsh-dock-c.png)
+![Read on the left, ask DSH on the right](docs/screenshots/02-dsh-dock-c.png)
 
 ### 2. One click, three answers
 
