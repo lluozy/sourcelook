@@ -18,9 +18,9 @@ window.__ModuleLoader__.load({
 
     const NS = 'sourcelook';
     const API = '/api/sourcelook';
-    const BUILD_TAG = '2026-11-17-b11';
+    const BUILD_TAG = '2026-11-17-b12';
     /* SourceLook 插件自身的版本号（与 DSH 无关）；关于对话框显示它。 */
-    const PLUGIN_VERSION = '1.5.124';
+    const PLUGIN_VERSION = '1.5.125';
     const HEADER = 'x-sourcelook';
 
     const MODE_KEY = 'sourcelook.mode';
@@ -9697,10 +9697,7 @@ const topbar = h('header', { className: 'sl-topbar' },
           title: 'SourceLook',
           className: 'sl-brand',
           items: [
-            { label: '关于 SourceLook', action: () => setAboutOpen(true) },
-            { sep: true },
             { label: '关闭 SourceLook', shortcut: 'Ctrl+Alt+S', action: () => setMode('D') },
-            { label: '重启 SourceLook', shortcut: 'Ctrl+Alt+R', action: () => { window.location.reload(); } },
           ],
         }),
         h('nav', { className: 'sl-menubar', 'aria-label': 'main menu' },
