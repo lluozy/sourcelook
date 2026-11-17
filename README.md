@@ -141,5 +141,6 @@ node scripts/smoke-index.cjs  # 索引 / 大纲 / 定义 / 引用
 
 ## 许可
 
-SourceLook 的移植代码来自 KernelSight（作者：luban），MIT。
-Monaco 为 MIT；tree-sitter 为 MIT。
+SourceLook 由 **Luozy** 开发；其中编辑器与索引部分移植自同作者的 KernelSight。
+
+项目以 MIT 许可发布。Monaco 为 MIT；tree-sitter 为 MIT。
