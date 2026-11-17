@@ -11,6 +11,9 @@ tmp/
 # ---- 发布打包产物 ----
 dist/
 
+# 冒烟测试往 fixture 里写的临时文件
+test/fixture/scratch.txt
+
 # ---- 依赖与系统垃圾 ----
 node_modules/
 *.log

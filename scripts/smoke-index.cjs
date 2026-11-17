@@ -4,7 +4,8 @@ const fs = require('fs');
 
 const plugin = path.join(__dirname, '..');
 const svc = require(path.join(plugin, 'host', 'fs-service.js'));
-const fixture = path.join(plugin, 'tmp', 'fixture');
+/* fixture 必须跟着仓库走（`tmp/` 被 .gitignore 排除，CI 上没有它）。 */
+const fixture = path.join(plugin, 'test', 'fixture');
 const cache = path.join(plugin, 'data', 'index-test');
 
 function assert(condition, message) {

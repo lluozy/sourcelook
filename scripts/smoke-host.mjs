@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { createFileService } from '../host/files.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.join(here, '..', 'tmp', 'fixture');
+/* fixture 必须跟着仓库走（`tmp/` 被 .gitignore 排除，CI 上没有它）。 */
+const root = path.join(here, '..', 'test', 'fixture');
 const svc = createFileService(root);
 
 function assert(condition, message) {
