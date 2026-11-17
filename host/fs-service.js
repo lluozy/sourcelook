@@ -3544,7 +3544,7 @@ function atFileScope(lines, line) {
  *
  * 原型形参在头文件里没有"定义"（函数体在 .c 里），索引只给函数体形参建符号。
  */
-function protoParamAt(lines, line, column, want, rel) {
+function protoParamAt(lines, line, column, want, rel, d, pool) {
   const at = Number(line) - 1;
   if (!(at >= 0 && at < lines.length)) return null;
   if (!atFileScope(lines, line)) return null;
@@ -3563,10 +3563,6 @@ function protoParamAt(lines, line, column, want, rel) {
   if (!/^[A-Za-z_]\w*$/.test(fn) || fn === want) return null;
   const ctrl = new Set(((tableFor(rel).lexical || {}).controlWords) || []);
   if (ctrl.has(fn)) return null;
-  /* 函数名所在行的前缀必须是声明前缀（返回类型 / 存储类）。 */
-  const beforeFn = text.slice(0, nameStart + 1);
-  const prefix = beforeFn.slice(beforeFn.lastIndexOf('\n') + 1).trim();
-  if (prefix === '' || /[=(){},;]/.test(prefix)) return null;
   /* 配对 `)`，跳过空白看下一个字符：`;` 才是原型。 */
   let depth = 0;
   let close = -1;
@@ -3582,6 +3578,20 @@ function protoParamAt(lines, line, column, want, rel) {
   let after = close + 1;
   while (after < text.length && /\s/.test(text[after])) after += 1;
   if (text[after] !== ';') return null;
+  /* **函数识别以索引为准**：索引里是 function 就认 —— 返回类型写成宏、
+     自定义 typedef、指针，甚至独占上一行都不影响。
+     索引查不到时才退回"有声明前缀且不是宏"：
+       - 拒绝 `static DEFINE_MUTEX(x);` 这类文件作用域宏调用（索引里是 macro）；
+       - 返回类型独占上一行的原型会被这条拒绝，但那种情况索引通常能查到函数。 */
+  if (d) {
+    const known = mapSymbols(d, fn, { kinds: ['function'], limit: 1 }, pool);
+    if (known.length > 0) return { fn };
+    const macroHit = mapSymbols(d, fn, { kinds: ['macro'], limit: 1 }, pool);
+    if (macroHit.length > 0) return null;
+  }
+  const beforeFn = text.slice(0, nameStart + 1);
+  const prefix = beforeFn.slice(beforeFn.lastIndexOf('\n') + 1).trim();
+  if (prefix === '' || /[=(){},;]/.test(prefix)) return null;
   return { fn };
 }
 
@@ -3940,6 +3950,35 @@ async function findDefinition(name, rel, options) {
     if (statics.length > 0) return result(statics.map((s) => withScope(s, 'file')));
   }
 
+  /* 4.5) 函数原型形参：当前在参数表内、函数名是索引里的 function。
+     必须放在全局同名查找**之前** —— 否则 `a` 会命中别的函数的形参或同名成员，
+     返回"同形不同物"（2026-11-17）。函数定义里的形参由 3) 局部作用域先命中，
+     不会走到这里。 */
+  if (line > 0) {
+    const shapeLines = await fileLines();
+    /* 宏形参：`#define M(X, ORDER)` 的形参 / `##` 拼接片段。 */
+    const macroParam = macroParamNoteOf(shapeLines, line, column, want);
+    if (macroParam !== '') return { ...result([]), status: 'macroParam', note: macroParam };
+    /* 宏体里的指定初始化器：容器类型由宏实参决定。 */
+    const macroBody = macroBodyMemberNoteOf(shapeLines, line, column, want);
+    if (macroBody !== '') return { ...result([]), status: 'macroBodyMember', note: macroBody };
+    const proto = protoParamAt(shapeLines, line, column, want, rel, d, pool);
+    if (proto !== null) {
+      const defs = mapSymbols(d, proto.fn, { kinds: ['function'], limit: 40 }, pool)
+        .filter((s) => !s.prototype);
+      const items = defs.slice(0, 6).map((s) => ({
+        file: s.file, line: s.line, name: proto.fn, kind: 'function'
+      }));
+      return {
+        ...result([]),
+        status: 'protoParam',
+        note: `\`${want}\` 是函数 \`${proto.fn}\` 原型里的形参；形参的"定义"在函数实现里`,
+        items,
+        target: items[0] || null
+      };
+    }
+  }
+
   /* 5) 全局：所有同名定义（类型/函数/宏优先），去重后列出。 */
   const typeHits = mapSymbols(d, want, {
     kinds: ['struct', 'union', 'enum', 'typedef', 'type', 'class', 'interface'],
@@ -3975,30 +4014,6 @@ async function findDefinition(name, rel, options) {
      "它不是符号"，不是"解析失败"（与 builtin 同一类处理，2026-11-17）。 */
   if (line > 0) {
     const textLines = await fileLines();
-    const macroParam = macroParamNoteOf(textLines, line, column, want);
-    if (macroParam !== '') {
-      return { ...result([]), status: 'macroParam', note: macroParam };
-    }
-    const proto = protoParamAt(textLines, line, column, want, rel);
-    if (proto !== null) {
-      const defs = mapSymbols(d, proto.fn, { kinds: ['function'], limit: 40 }, pool)
-        .filter((s) => !s.prototype);
-      const items = defs.slice(0, 6).map((s) => ({
-        file: s.file, line: s.line, name: proto.fn, kind: 'function'
-      }));
-      return {
-        ...result([]),
-        status: 'protoParam',
-        note: `\`${want}\` 是函数 \`${proto.fn}\` 原型里的形参；形参的"定义"在函数实现里`,
-        items,
-        target: items[0] || null
-      };
-    }
-    /* 宏体里的指定初始化器：容器类型由宏实参决定。 */
-    const macroBody = macroBodyMemberNoteOf(textLines, line, column, want);
-    if (macroBody !== '') {
-      return { ...result([]), status: 'macroBodyMember', note: macroBody };
-    }
     /* Kconfig：名字前缀来自语言表（`CONFIG_`），定义不在源码里。 */
     const cfgPrefix = (tableFor(rel).symbols || {}).configPrefix || '';
     if (cfgPrefix !== '' && want.startsWith(cfgPrefix)) {
