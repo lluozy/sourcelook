@@ -42,7 +42,7 @@ const LANG = globalThis.Lang;
 /* 解析器「内容版本」。**只要字段/成员/符号的提取逻辑有变化就改这里**：
    索引里会记下建它时用的版本，加载时不一致就标记过期（提示重建），
    避免"解析器修好了、磁盘上还是旧索引"这种静默错答（2026-11-15 位域成员问题）。 */
-const PARSER_REV = '2026-11-17-04';
+const PARSER_REV = '2026-11-17-05';
 
 let SYN = {};
 /* 词法块（lexical）：语言自己的"内容长相"判据（如汇编伪指令行数）住在表里。 */
@@ -742,10 +742,11 @@ function blankLiterals(text) {
 function collectMacroBodyRefs(node, src, scope, out) {
   const val = field(node, NN.value);
   if (!val) return;
-  /* 宏体里的字面量（字符串 / 字符 / 数字）不是引用：`0x00000000` 的
-     `x00000000`、`"hello"` 的 `hello` 曾被记成引用（全量扫描里几十万条）。
-     等长抹成空格，行列仍对得上原文。 */
-  const text = blankLiterals(textOf(val, src));
+  /* 宏体里的注释与字面量都不是引用：`/* Receive packet *​/` 的 Receive、
+     `0x00000000` 的 x00000000、`"hello"` 的 hello 曾被记成引用
+     （全量扫描里几十万条）。等长抹成空格，行列仍对得上原文。
+     `maskBlockComments` 逐字符走，字符串里的 `/*` 不会被误当注释。 */
+  const text = blankLiterals(maskBlockComments(textOf(val, src)));
   if (!text) return;
   const params = new Set();
   const list = field(node, NN.parameters) || childrenOfType(node, NN.preprocParams)[0];
