@@ -3,6 +3,8 @@
 > 在 DeepSeek Harness 里读 Linux 内核和大型 C 工程。
 > 点一下就跳定义、看引用、查调用链；**看不懂的代码，直接让旁边的 DSH 讲给你听**。
 
+**简体中文** ｜ [English](README.en.md)
+
 ![SourceLook 主界面](docs/screenshots/01-overlay-p.png)
 
 内存里没有 AST 服务，也没有语言服务器。插件自己建一份二进制符号索引
