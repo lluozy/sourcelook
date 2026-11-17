@@ -1,0 +1,54 @@
+name: release
+
+# 打 v* tag 时自动：构建 client.js → 语法/冒烟检查 → 打安装包 → 建 release。
+# 手动发版那套（Compress-Archive + 网页上传）可以退休了。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build client bundle
+        run: node scripts/build.mjs
+
+      - name: Syntax check
+        run: node --check client.js
+
+      - name: Smoke tests
+        run: |
+          node scripts/smoke-host.mjs
+          node scripts/smoke-index.cjs
+
+      - name: Package install bundle
+        run: |
+          set -eu
+          VER="${GITHUB_REF_NAME#v}"
+          if [ -z "$VER" ] || [ "$VER" = "$GITHUB_REF_NAME" ]; then VER="dev"; fi
+          PKG="SourceLook-$VER"
+          mkdir -p "dist/$PKG"
+          cp index.js client.js icon.svg cordis.patch.yml package.json LICENSE NOTICE \
+             README.md README.en.md "dist/$PKG/"
+          cp -r host renderer-lib vendor locale "dist/$PKG/"
+          cd dist
+          zip -qr "$PKG.zip" "$PKG"
+          ls -lh "$PKG.zip"
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
