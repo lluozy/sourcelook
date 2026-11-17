@@ -2681,6 +2681,9 @@ function receiverExprAt(lineText, column) {
   s = s.replace(/[A-Za-z_]\w*$/, '').replace(/\s+$/, '');
   if (!/(?:->|\.)\s*$/.test(s)) return '';
   s = s.replace(/(?:->|\.)\s*$/, '').replace(/\s+$/, '');
+  /* `{ .field` / `, .field` / `( .field`：`.` 前面不是表达式（指定初始化器），
+     交给指定初始化器规则或兜底说明，不要当成成员访问。 */
+  if (s === '' || /[{(,;=]$/.test(s)) return '';
   let depth = 0;
   let cut = -1;
   for (let i = s.length - 1; i >= 0; i -= 1) {
@@ -3532,6 +3535,13 @@ function atFileScope(lines, line) {
 
 /**
  * 点击处是函数原型参数表里的形参 → `{ fn }`；否则 null。
+ *
+ * 支持**多行**原型（`void f(int a,\n int b);`）。判据：
+ * ① 文件作用域；② 向上找未闭合 `(`，取它前面的标识符当函数名；
+ * ③ 函数名前必须有声明前缀（返回类型 / 存储类）—— 排除文件作用域的宏调用
+ *    （`MODULE_DEVICE_TABLE(pci, x);` 前面什么都没有）；
+ * ④ 从 `(` 配对 `)`，再看后面是 `;`（原型）还是 `{`（定义，归 local-scope）。
+ *
  * 原型形参在头文件里没有"定义"（函数体在 .c 里），索引只给函数体形参建符号。
  */
 function protoParamAt(lines, line, column, want, rel) {
@@ -3540,33 +3550,85 @@ function protoParamAt(lines, line, column, want, rel) {
   if (!atFileScope(lines, line)) return null;
   const col = Number(column) || 0;
   if (col <= 0) return null;
-  const text = String(lines[at] || '').replace(/\/\/.*$/, '');
-  const body = text.trim();
-  /* 必须是**单行**、以 `;` 结尾、不含函数体花括号的声明。 */
-  if (!/;$/.test(body) || body.indexOf('{') >= 0 || body.indexOf('}') >= 0) return null;
-  const head = text.slice(0, col - 1);
-  let depth = 0;
-  let open = -1;
-  for (let i = head.length - 1; i >= 0; i -= 1) {
-    const ch = head[i];
-    if (ch === ')') depth += 1;
-    else if (ch === '(') {
-      if (depth === 0) { open = i; break; }
-      depth -= 1;
-    }
-  }
+  const text = blankNoise(lines.join('\n'));
+  const offset = offsetOfLineColumn(lines, line, column);
+  const open = matchBackward(text, offset, '(', ')');
   if (open < 0) return null;
-  const pre = head.slice(0, open).replace(/\s+$/, '');
-  const m = /([A-Za-z_]\w*)$/.exec(pre);
-  if (!m) return null;
-  const fn = m[1];
-  if (fn === want) return null;
+  /* 函数名：`(` 前跳过空白和 `*`，取一个标识符。 */
+  let nameEnd = open - 1;
+  while (nameEnd >= 0 && /[\s*]/.test(text[nameEnd])) nameEnd -= 1;
+  let nameStart = nameEnd;
+  while (nameStart >= 0 && /[A-Za-z0-9_]/.test(text[nameStart])) nameStart -= 1;
+  const fn = text.slice(nameStart + 1, nameEnd + 1);
+  if (!/^[A-Za-z_]\w*$/.test(fn) || fn === want) return null;
   const ctrl = new Set(((tableFor(rel).lexical || {}).controlWords) || []);
   if (ctrl.has(fn)) return null;
-  /* 函数名之前必须是声明前缀（返回类型 / 存储类），不能是表达式。 */
-  const beforeFn = pre.slice(0, pre.length - fn.length);
-  if (/[=(){},;]/.test(beforeFn)) return null;
+  /* 函数名所在行的前缀必须是声明前缀（返回类型 / 存储类）。 */
+  const beforeFn = text.slice(0, nameStart + 1);
+  const prefix = beforeFn.slice(beforeFn.lastIndexOf('\n') + 1).trim();
+  if (prefix === '' || /[=(){},;]/.test(prefix)) return null;
+  /* 配对 `)`，跳过空白看下一个字符：`;` 才是原型。 */
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) { close = i; break; }
+    }
+  }
+  if (close < 0) return null;
+  let after = close + 1;
+  while (after < text.length && /\s/.test(text[after])) after += 1;
+  if (text[after] !== ';') return null;
   return { fn };
+}
+
+/** 宏体里指定初始化器的成员名：`.field = …` 写在 `#define` 宏体内，
+ *  容器类型由宏实参决定，没有真实声明。 */
+function macroBodyMemberNoteOf(lines, line, column, want) {
+  const blk = macroDefineBlockAt(lines, line);
+  if (!blk) return '';
+  const text = String(lines[Number(line) - 1] || '');
+  const before = text.slice(0, Math.max(0, (Number(column) || 0) - 1)).replace(/\s+$/, '');
+  if (!/\.\s*$/.test(before)) return '';
+  return `\`${want}\` 是宏 \`${blk.name}\` 体里指定初始化器的成员名，容器类型由宏实参决定`;
+}
+
+/** 点击在宏调用的**实参**位置、且该实参是单个标识符 → 返回宏名。
+ *  普通函数调用的实参不算（它们的名字由局部/全局解析负责）。 */
+function macroArgAt(d, text, offset, want, pool) {
+  const open = matchBackward(text, offset, '(', ')');
+  if (open < 0) return '';
+  /* 当前实参的起点：`(` 之后最后一个顶层逗号。 */
+  let depth = 0;
+  let argStart = open + 1;
+  for (let i = open + 1; i < offset; i += 1) {
+    const ch = text[i];
+    if (ch === '(' || ch === '{' || ch === '[') depth += 1;
+    else if (ch === ')' || ch === '}' || ch === ']') depth -= 1;
+    else if (ch === ',' && depth === 0) argStart = i + 1;
+  }
+  const arg = text.slice(argStart, offset + String(want).length).trim();
+  if (arg !== want) return '';
+  let nameEnd = open - 1;
+  while (nameEnd >= 0 && /[\s*]/.test(text[nameEnd])) nameEnd -= 1;
+  let nameStart = nameEnd;
+  while (nameStart >= 0 && /[A-Za-z0-9_]/.test(text[nameStart])) nameStart -= 1;
+  const fnName = text.slice(nameStart + 1, nameEnd + 1);
+  if (!/^[A-Za-z_]\w*$/.test(fnName)) return '';
+  /* 已知函数 → 普通调用，不按宏实参解释。 */
+  const fns = mapSymbols(d, fnName, { kinds: ['function'], limit: 1 }, pool);
+  if (fns.length > 0) return '';
+  return fnName;
+}
+
+/** 标准库 / 外部符号：名字在语言表的外部符号清单里。 */
+function externalNoteOf(name, rel) {
+  const t = tableFor(rel);
+  const map = (t.symbols && t.symbols.externalIdentifiers) || null;
+  return (map && map[name]) || '';
 }
 
 /**
@@ -3931,6 +3993,35 @@ async function findDefinition(name, rel, options) {
         items,
         target: items[0] || null
       };
+    }
+    /* 宏体里的指定初始化器：容器类型由宏实参决定。 */
+    const macroBody = macroBodyMemberNoteOf(textLines, line, column, want);
+    if (macroBody !== '') {
+      return { ...result([]), status: 'macroBodyMember', note: macroBody };
+    }
+    /* Kconfig：名字前缀来自语言表（`CONFIG_`），定义不在源码里。 */
+    const cfgPrefix = (tableFor(rel).symbols || {}).configPrefix || '';
+    if (cfgPrefix !== '' && want.startsWith(cfgPrefix)) {
+      return {
+        ...result([]),
+        status: 'kconfig',
+        note: `\`${want}\` 是 Kconfig 配置项，定义在 Kconfig / .config，不是源码符号`
+      };
+    }
+    /* 宏实参：实参位置、单个标识符、不是已知函数 —— 宏展开后才有语义。 */
+    const full = blankNoise(textLines.join('\n'));
+    const macroArg = macroArgAt(d, full, offsetOfLineColumn(textLines, line, column), want, pool);
+    if (macroArg !== '') {
+      return {
+        ...result([]),
+        status: 'macroArg',
+        note: `\`${want}\` 是宏 \`${macroArg}\` 的实参，宏展开后才有语义，没有独立定义`
+      };
+    }
+    /* 标准库 / 外部符号：语言表里有清单（只在索引查不到时使用）。 */
+    const external = externalNoteOf(want, rel);
+    if (external !== '') {
+      return { ...result([]), status: 'external', note: external };
     }
   }
   const builtinNote = builtinNoteOf(want, rel);

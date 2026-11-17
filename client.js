@@ -18,9 +18,9 @@ window.__ModuleLoader__.load({
 
     const NS = 'sourcelook';
     const API = '/api/sourcelook';
-    const BUILD_TAG = '2026-11-17-b6';
+    const BUILD_TAG = '2026-11-17-b7';
     /* SourceLook 插件自身的版本号（与 DSH 无关）；关于对话框显示它。 */
-    const PLUGIN_VERSION = '1.5.119';
+    const PLUGIN_VERSION = '1.5.120';
     const HEADER = 'x-sourcelook';
 
     const MODE_KEY = 'sourcelook.mode';
@@ -8041,6 +8041,29 @@ window.createMonacoAdapter = createMonacoAdapter;
               items: [],
               refs: [],
               note: defData.reason || '这是 goto 标签,不是符号',
+              preview: { file: active, line },
+            };
+            showResults(payload);
+            remember(payload, { file: active, line });
+            return;
+          }
+          /* 宏实参 / Kconfig / 宏体成员 / 标准库外部符号：都不是"解析失败"，
+             给一句说明即可（1.5.120）。 */
+          if (defData?.status === 'kconfig' || defData?.status === 'macroArg'
+            || defData?.status === 'macroBodyMember' || defData?.status === 'external') {
+            const kindLabel = {
+              kconfig: 'Kconfig 配置项',
+              macroArg: '宏实参',
+              macroBodyMember: '宏体成员',
+              external: '外部符号'
+            }[defData.status];
+            const payload = {
+              title: `${word} · ${kindLabel}`,
+              word,
+              kind: 'context',
+              items: [],
+              refs: [],
+              note: defData.note || kindLabel,
               preview: { file: active, line },
             };
             showResults(payload);

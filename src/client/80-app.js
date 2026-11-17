@@ -3094,6 +3094,29 @@
             remember(payload, { file: active, line });
             return;
           }
+          /* 宏实参 / Kconfig / 宏体成员 / 标准库外部符号：都不是"解析失败"，
+             给一句说明即可（1.5.120）。 */
+          if (defData?.status === 'kconfig' || defData?.status === 'macroArg'
+            || defData?.status === 'macroBodyMember' || defData?.status === 'external') {
+            const kindLabel = {
+              kconfig: 'Kconfig 配置项',
+              macroArg: '宏实参',
+              macroBodyMember: '宏体成员',
+              external: '外部符号'
+            }[defData.status];
+            const payload = {
+              title: `${word} · ${kindLabel}`,
+              word,
+              kind: 'context',
+              items: [],
+              refs: [],
+              note: defData.note || kindLabel,
+              preview: { file: active, line },
+            };
+            showResults(payload);
+            remember(payload, { file: active, line });
+            return;
+          }
           /* 函数原型形参：原型不定义形参,实现在函数体里 —— 能给就跳到函数定义。 */
           if (defData?.status === 'protoParam') {
             const items = Array.isArray(defData.items) ? defData.items : [];

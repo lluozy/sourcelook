@@ -16,9 +16,9 @@ window.__ModuleLoader__.load({
 
     const NS = 'sourcelook';
     const API = '/api/sourcelook';
-    const BUILD_TAG = '2026-11-17-b6';
+    const BUILD_TAG = '2026-11-17-b7';
     /* SourceLook 插件自身的版本号（与 DSH 无关）；关于对话框显示它。 */
-    const PLUGIN_VERSION = '1.5.119';
+    const PLUGIN_VERSION = '1.5.120';
     const HEADER = 'x-sourcelook';
 
     const MODE_KEY = 'sourcelook.mode';
