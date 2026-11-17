@@ -3,7 +3,8 @@
 > 最后更新：2026-11-17 · 版本 **1.5.113** · 许可证 Apache-2.0
 >
 > 这份文档是「接手新任务」的入口：项目是什么、现在能做什么、代码在哪、怎么改、有哪些坑。
-> 逐版历史见 `docs/dev/HANDOFF-NEXT.md`；更早的原始交接见 `docs/dev/HANDOFF.md`（部分描述已过时）。
+> 逐版历史见 `HANDOFF-NEXT.md`；更早的原始交接见 `HANDOFF.md`（部分描述已过时）。
+> 所有项目文档（含交接、计划、评审）都放在**仓库根目录**，不藏子目录 —— 打开目录一眼能看到。
 
 ---
 
@@ -173,21 +174,27 @@ node scripts/smoke-index.cjs    # 索引/大纲/定义/引用
 ## 13. 目录约定
 
 ```
-根目录（正式内容，全部入库）
-  index.js  client.js  icon.svg  cordis.patch.yml  package.json
-  README.md  README.en.md  PROJECT.md  LICENSE  NOTICE
-  src/  host/  renderer-lib/  vendor/  locale/     源码与资源
-  scripts/                                         构建与冒烟
-  test/fixture/                                    测试夹具（CI 依赖，必须入库）
-  docs/screenshots/                                README 截图
-  docs/dev/                                        历史决策与交接（HANDOFF*.md / *PLAN.md / PLUGIN-RULES.md）
+仓库根目录 = 全部 GitHub 内容（打开这个目录就一目了然，不藏子目录）
+  入口      index.js  client.js  icon.svg  cordis.patch.yml  package.json
+  文档      README.md  README.en.md  PROJECT.md
+            HANDOFF.md  HANDOFF-NEXT.md  PLUGIN-RULES.md  REVIEW-BRIEF.md
+            BITFIELD-INDEX-PLAN.md 等 5 个 *PLAN.md
+  许可证    LICENSE  NOTICE
+  源码      src/  host/  renderer-lib/  vendor/  locale/
+  构建测试  scripts/  test/fixture/
+  截图      docs/screenshots/          （只有 README 引用的图按路径分组）
 
-工作区（本地，不入库）
-  tmp/      临时脚本、日志、一次性探针  ← 所有临时物都放这里
+本地工作区（不入库，.gitignore 覆盖）
+  tmp/      临时脚本、日志、一次性探针
   data/     索引缓存（约 1.2 GB）
   dist/     打包产物
-  tools/    本机工作流脚本（三个 .cmd，CodeBuddy 用）
+  tools/    本机工作流脚本（三个 .cmd）
 ```
 
-**规则**：新产生的临时文件一律进 `tmp/`；根目录不再落 `.md` / `.cjs` / `.log` / `.png`。
-`tmp/`、`data/`、`dist/`、`tools/` 都已写进 `.gitignore`，`git status` 应永远干净。
+**规则**：
+
+1. **项目文档一律放仓库根目录**（含交接、todo、计划、评审），**不建 `docs/dev` 这类子目录** ——
+   时间久了没人记得子目录里有什么。`docs/` 下只放 README 引用的截图。
+2. 临时文件（脚本、日志、导出）一律进 `tmp/`；根目录不落 `.log` / `.cjs` / `.png`。
+3. `tmp/`、`data/`、`dist/`、`tools/` 都在 `.gitignore` 里，`git status` 应永远干净。
+4. Agent 的探针脚本（CDP 调试等）放工作区（如 `d:\sourcelook\codebuddy`），**不进这个仓库**。
