@@ -4732,14 +4732,24 @@ ${following.join('\n')}
         : (indexInfo?.built === true ? 'ready' : 'none');
 
 const topbar = h('header', { className: 'sl-topbar' },
-        h('div', { className: 'sl-brand', title: 'SourceLook' },
-          h('span', { className: 'sl-brand-name' },
+        /* 品牌本身就是下拉入口：点开一个小菜单，可以关闭/重启 SourceLook
+           （关闭 = setMode('D')，整层隐藏并恢复 DSH 几何；Ctrl+Alt+S 可切回）。 */
+        h(SlMenu, {
+          label: h('span', { className: 'sl-brand-name' },
             h('span', { className: 'sl-brand-hot' }, 'S'),
             h('span', {}, 'ource'),
             h('span', { className: 'sl-brand-hot green' }, 'L'),
             h('span', {}, 'ook'),
           ),
-        ),
+          title: 'SourceLook',
+          className: 'sl-brand',
+          items: [
+            { label: '关于 SourceLook', action: () => setAboutOpen(true) },
+            { sep: true },
+            { label: '关闭 SourceLook', shortcut: 'Ctrl+Alt+S', action: () => setMode('D') },
+            { label: '重启 SourceLook', shortcut: 'Ctrl+Alt+R', action: () => { window.location.reload(); } },
+          ],
+        }),
         h('nav', { className: 'sl-menubar', 'aria-label': 'main menu' },
           h(SlMenu, { label: '文件', items: fileMenu }),
           h(SlMenu, { label: '编辑', items: editMenu }),

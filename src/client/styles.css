@@ -5893,3 +5893,20 @@ html[data-sourcelook-mode="C"] .sl-layer .sl-crumb-path {
   white-space: nowrap;
 }
 .sl-layer .sl-rw-fbody { padding-left: 14px; }
+
+/* ------------------- 标题栏品牌下拉（1.5.124） ------------------- */
+/* 品牌点开是一小菜单；外观保持标题栏品牌，不套菜单按钮的底色/边框。 */
+.sl-layer .sl-brand .sl-menu-btn {
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sl-layer .sl-brand .sl-menu-btn:hover { background: transparent; }
+.sl-layer .sl-brand .sl-menu-caret { opacity: .4; }
