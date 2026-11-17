@@ -2720,6 +2720,150 @@ function lastOperand(expr) {
   return (cut >= 0 ? s.slice(cut + 1) : s).trim();
 }
 
+/** 从 from 向左配对 `{` / `(` / `[`，返回匹配的开符号偏移；找不到返回 -1。 */
+function matchBackward(text, from, open, close) {
+  let depth = 0;
+  for (let i = from - 1; i >= 0; i -= 1) {
+    const ch = text[i];
+    if (ch === close) { depth += 1; continue; }
+    if (ch === open) {
+      if (depth === 0) return i;
+      depth -= 1;
+    }
+  }
+  return -1;
+}
+
+/** 声明起点：从 `=` 向左，遇到内联结构体的 `}` 就跳回匹配的 `{`，
+ *  继续取到 `struct X`；普通语句停在 `;` / 换行。 */
+function declarationStart(text, eqPos) {
+  let start = eqPos;
+  while (start > 0) {
+    const ch = text[start - 1];
+    if (ch === ';' || ch === '\n') break;
+    if (ch === '}') {
+      const open = matchBackward(text, start - 1, '{', '}');
+      if (open < 0) break;
+      start = open;
+      continue;
+    }
+    start -= 1;
+  }
+  return start;
+}
+
+/** 声明片段 → 类型名：`static const struct T arr[]` → `T`，`T x` → `T`。 */
+function declarationTypeName(fragment) {
+  let s = String(fragment || '').trim();
+  if (s === '') return '';
+  /* 先整段找 tagged 类型：`static const struct X { … } tbl[] = {` 的类型名
+     在 `struct X` 上，不能因为后面有 `}` 就把前半截丢掉。 */
+  const tagged = /\b(?:struct|union|enum)\s+([A-Za-z_]\w*)/.exec(s);
+  if (tagged !== null) return tagged[1];
+  let cut = -1;
+  for (let i = s.length - 1; i >= 0; i -= 1) {
+    if (s[i] === ';' || s[i] === '{' || s[i] === '}' || s[i] === '\n') { cut = i; break; }
+  }
+  s = s.slice(cut + 1).trim();
+  const eq = s.indexOf('=');
+  if (eq >= 0) s = s.slice(0, eq).trim();
+  s = s.replace(/^\[[^\]]*\]\s*=\s*/, '').trim();
+  const plain = /^([A-Za-z_]\w*)\s+(?:\*|[A-Za-z_]\w*)/.exec(s);
+  if (plain !== null) return plain[1];
+  return '';
+}
+
+/** `.field = value` 的容器类型：向上找初始化器 `{`，按 `= {`（声明/数组）或
+ *  `(struct T){`（复合字面量）取类型；`[IDX] = {` 的嵌套继续向外找。
+ *  只做语法推导，不认具体类型名。 */
+function designatorOwnerAt(rawText, offset) {
+  const text = blankNoise(rawText);
+  let i = offset - 1;
+  while (i >= 0 && /\s/.test(text[i])) i -= 1;
+  if (i < 0 || text[i] !== '.') return '';
+  let j = i - 1;
+  while (j >= 0 && /\s/.test(text[j])) j -= 1;
+  /* 左边是标识符 / `]` / `)` → 普通成员访问 `x.field`，不归这条规则。 */
+  if (j >= 0 && /[A-Za-z0-9_\]\)]/.test(text[j])) return '';
+  let brace = matchBackward(text, i, '{', '}');
+  let guard = 0;
+  while (brace >= 0 && guard < 8) {
+    guard += 1;
+    let k = brace - 1;
+    while (k >= 0 && /\s/.test(text[k])) k -= 1;
+    if (k >= 0 && text[k] === '=') {
+      let n = k - 1;
+      while (n >= 0 && /\s/.test(text[n])) n -= 1;
+      if (n >= 0 && text[n] === ']') {
+        const lb = matchBackward(text, n, '[', ']');
+        if (lb >= 0) {
+          let before = lb - 1;
+          while (before >= 0 && /\s/.test(text[before])) before -= 1;
+          /* `arr[] = {` / `arr[10] = {`：`[` 左边是标识符 → 数组声明，
+             元素类型就是声明里的类型，直接取。 */
+          if (before >= 0 && /[A-Za-z0-9_]/.test(text[before])) {
+            return declarationTypeName(text.slice(declarationStart(text, k), k));
+          }
+          /* `{ … [IDX] = { … } }`：数组设计符，继续向外找外层初始化器。 */
+          brace = matchBackward(text, lb, '{', '}');
+          continue;
+        }
+      }
+      return declarationTypeName(text.slice(declarationStart(text, k), k));
+    }
+    if (k >= 0 && text[k] === ')') {
+      const open = matchBackward(text, k, '(', ')');
+      if (open < 0) return '';
+      return baseTypeName(text.slice(open + 1, k));
+    }
+    brace = matchBackward(text, brace, '{', '}');
+  }
+  return '';
+}
+
+/** 调用实参里的类型：`f(..., struct T, field)` 返回 T。只看**前一个顶层实参**
+ *  是否写成类型表达式；不认宏名，`offsetof` / `container_of` / 自定义宏都适用。 */
+function typeArgumentOwnerAt(rawText, offset) {
+  const text = blankNoise(rawText);
+  const open = matchBackward(text, offset, '(', ')');
+  if (open < 0) return '';
+  const args = [];
+  let depth = 0;
+  let start = open + 1;
+  for (let i = open + 1; i < offset; i += 1) {
+    const ch = text[i];
+    if (ch === '(' || ch === '{' || ch === '[') depth += 1;
+    else if (ch === ')' || ch === '}' || ch === ']') depth -= 1;
+    else if (ch === ',' && depth === 0) { args.push(text.slice(start, i)); start = i + 1; }
+  }
+  args.push(text.slice(start, offset));
+  if (args.length < 2) return '';
+  const prev = args[args.length - 2].trim();
+  if (prev === '') return '';
+  const tagged = /^(?:const\s+|volatile\s+)*(?:struct|union|enum)\s+([A-Za-z_]\w*)\s*\**$/u.exec(prev);
+  if (tagged !== null) return tagged[1];
+  const plain = /^([A-Za-z_]\w*)\s*\**$/u.exec(prev);
+  if (plain !== null) return plain[1];
+  return '';
+}
+
+/** 行/列 → 文件绝对偏移（换行按 `\n` 计）。 */
+function offsetOfLineColumn(lines, line, column) {
+  let offset = 0;
+  for (let i = 0; i < line - 1 && i < lines.length; i += 1) offset += lines[i].length + 1;
+  return offset + Math.max(0, column - 1);
+}
+
+/** 索引里是否存在这个类型名（struct/union/enum/typedef/class…）。 */
+function isTypeNameIn(d, name, pool) {
+  if (name === '') return false;
+  const hits = mapSymbols(d, name, {
+    kinds: ['struct', 'union', 'enum', 'typedef', 'type', 'class', 'interface'],
+    limit: 1
+  }, pool);
+  return hits.length > 0;
+}
+
 /** typedef 别名指向的类型名：`skb_frag_t`（type=`struct bio_vec`）→ `bio_vec`。
  *  内核 include/ 里就有 638 个 `typedef struct/union`，成员挂在被指向的结构体下，
  *  不跟随就永远查不到（`frag->bv_len` 就是这么"未解析"的）。 */
@@ -3521,6 +3665,47 @@ async function findDefinition(name, rel, options) {
   const typeCtx = lineText !== '' && isTypeKeywordBefore(lineText, column);
   const recv = lineText !== '' && !typeCtx ? receiverExprAt(lineText, column) : '';
 
+  /* 成员查询：给定 owner 类型名，找目标名字的成员。成员访问、指定初始化器、
+     类型实参绑定三处共用。 */
+  const membersOf = async (ownerName) => {
+    let hits = mapSymbols(d, want, {
+      parent: ownerName,
+      kinds: ['member', 'enum_member', 'variable', 'field'],
+      limit: 40
+    }, pool)
+      .slice()
+      .sort((a, b) => definitionRank(a.file, rel) - definitionRank(b.file, rel));
+    if (hits.length === 0 || definitionRank(hits[0].file, rel) > 1) {
+      const synthetic = await memberFromTypeText(d, ownerName, want, rel, pool);
+      if (synthetic !== null && !hits.some((m) => m.file === synthetic.file
+        && m.line === synthetic.line && (m.parent || '') === (synthetic.parent || ''))) {
+        hits.unshift(synthetic);
+      }
+    }
+    return hits;
+  };
+  const pickBest = (members) => {
+    const best = Math.min(...members.map((s) => definitionRank(s.file, rel)));
+    return best <= 2 ? members.filter((s) => definitionRank(s.file, rel) === best) : members;
+  };
+
+  /* 0a) 指定初始化器 `.field = value`：`.field` 没有接收者，容器类型来自
+        外层初始化器（`= {` 的声明/数组元素、`(struct T){` 的复合字面量）。
+        纯语法推导，不认具体类型名。
+        必须放在成员访问之前：`receiverExprAt` 会把 `{ .field` 里的 `{`
+        当成接收者表达式。`designatorOwnerAt` 对 `x.field` 返回空，不会误吞。 */
+  if (rel !== '' && line > 0 && lineText !== '') {
+    const beforeClick = lineText.slice(0, Math.max(0, column - 1)).replace(/[A-Za-z_]\w*$/, '');
+    if (/\.\s*$/.test(beforeClick)) {
+      const allLines = await fileLines();
+      const owner = designatorOwnerAt(allLines.join('\n'), offsetOfLineColumn(allLines, line, column));
+      if (owner !== '') {
+        const members = await membersOf(owner);
+        if (members.length > 0) return result(pickBest(members).map((s) => withScope(s, 'global')));
+      }
+    }
+  }
+
   /* 0) 成员访问 `x->field` / `x.field` / `a->b.c`：解析接收者表达式类型，再按 owner 查成员。 */
   if (recv !== '') {
     const expr = lastOperand(recv).trim();
@@ -3558,24 +3743,6 @@ async function findDefinition(name, rel, options) {
     if (owners.length === 0) {
       return { ...result([]), status: 'unresolved', reason: `无法解析接收者 \`${expr}\` 的类型` };
     }
-    const membersOf = async (ownerName) => {
-      let hits = mapSymbols(d, want, {
-        parent: ownerName,
-        kinds: ['member', 'enum_member', 'variable', 'field'],
-        limit: 40
-      }, pool)
-        .slice()
-        .sort((a, b) => definitionRank(a.file, rel) - definitionRank(b.file, rel));
-      if (hits.length === 0 || definitionRank(hits[0].file, rel) > 1) {
-        const synthetic = await memberFromTypeText(d, ownerName, want, rel, pool);
-        if (synthetic !== null && !hits.some((m) => m.file === synthetic.file
-          && m.line === synthetic.line && (m.parent || '') === (synthetic.parent || ''))) {
-          hits.unshift(synthetic);
-        }
-      }
-      return hits;
-    };
-
     let base = owners[0];
     let owner = base;
     let members = [];
@@ -3613,6 +3780,20 @@ async function findDefinition(name, rel, options) {
         ? `\`${base}\`（→ \`${owner}\`）里没有成员 \`${want}\``
         : `\`${base}\` 里没有成员 \`${want}\``
     };
+  }
+  /* 0b) 类型实参绑定：`f(..., struct T, field)` —— 前一个顶层实参是类型时，
+        当前实参按该类型的成员解析。`offsetof` / `container_of` 以及任何
+        自定义的“类型+成员”宏都走这一条，规则里没有宏名。 */
+  if (recv === '' && rel !== '' && line > 0 && lineText !== '') {
+    const beforeClick = lineText.slice(0, Math.max(0, column - 1)).replace(/[A-Za-z_]\w*$/, '');
+    if (beforeClick.indexOf('(') >= 0) {
+      const allLines = await fileLines();
+      const owner = typeArgumentOwnerAt(allLines.join('\n'), offsetOfLineColumn(allLines, line, column));
+      if (owner !== '' && await isTypeNameIn(d, owner, pool)) {
+        const members = await membersOf(owner);
+        if (members.length > 0) return result(pickBest(members).map((s) => withScope(s, 'global')));
+      }
+    }
   }
   /* 1) 类型位置：`struct sock *sk` 里点 sock → 类型定义。 */
   if (typeCtx) {
