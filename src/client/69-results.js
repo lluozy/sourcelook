@@ -668,6 +668,7 @@
       const [query, setQuery] = useState('');
       const [kindOpen, setKindOpen] = useState(false);
       const [openCallers, setOpenCallers] = useState(() => new Set());
+      const [openFiles, setOpenFiles] = useState(() => new Set());
       const codeRef = useRef(null);
 
       useEffect(() => {
@@ -679,6 +680,31 @@
         /* 调用层级默认展开第一项，下面的代码区也对应第一处调用。 */
         setOpenCallers(new Set(Array.isArray(callers) && callers.length > 0 ? [0] : []));
       }, [win?.tree]);
+
+      /* 普通结果按文件分组：结果少时全展开，多时只留第一个文件；
+         F4 选中项所在文件会自动展开，保证高亮行可见。 */
+      useEffect(() => {
+        const list = Array.isArray(win?.hits) ? win.hits : [];
+        const files = [];
+        const seen = new Set();
+        for (const hit of list) {
+          const file = String(hit?.file || '');
+          if (!seen.has(file)) {
+            seen.add(file);
+            files.push(file);
+          }
+        }
+        setOpenFiles(new Set(list.length <= 20 ? files : files.slice(0, 1)));
+      }, [win?.hits]);
+
+      useEffect(() => {
+        const list = Array.isArray(win?.hits) ? win.hits : [];
+        const index = win?.selected;
+        if (typeof index !== 'number' || index < 0 || index >= list.length) return;
+        const file = String(list[index]?.file || '');
+        if (file === '') return;
+        setOpenFiles((previous) => (previous.has(file) ? previous : new Set([...previous, file])));
+      }, [win?.selected, win?.hits]);
 
       useEffect(() => { writeResultGeom(geom); }, [geom]);
 
@@ -820,6 +846,49 @@
 
       const previewLine = Number(preview?.line) || 1;
 
+      /* 一条结果行：分组与平铺共用；index 保持 hits 里的原始下标，
+         F4 逐条与选中高亮都不受分组影响。 */
+      const resultRow = (hit, index) => {
+        const kind = resultRowKind(hit);
+        return h('div', {
+          key: `${hit.file}:${hit.line}:${index}`,
+          role: 'option',
+          'data-i': index,
+          'aria-selected': win.selected === index ? 'true' : 'false',
+          className: `sl-rw-row${win.selected === index ? ' active' : ''}`,
+          title: rowTip(hit),
+          onClick: () => onSelect(index, hit),
+          onDoubleClick: () => onOpen(hit),
+        },
+        kind !== '' ? h(SymbolBadge, { kind }) : null,
+        hit.fn ? h('span', { className: 'sl-rw-fn' }, `${hit.fn}()`) : null,
+        h('span', { className: 'sl-rw-file' }, hit.file),
+        hit.pool ? h('span', { className: 'sl-rw-pool' }, `来自 ${hit.pool}`) : null,
+        hit.approx ? h('span', { className: 'sl-rw-pool sl-rw-approx', title: '近似符号：未注册语言，通用词法' }, '近似') : null,
+        h('span', { className: 'sl-rw-line' }, hit.line),
+        h('span', { className: 'sl-rw-text' }, String(hit.text || '').trim()),
+        hit.conf && hit.conf !== 'exact' ? h('span', { className: 'sl-rw-conf' }, hit.conf) : null,
+        );
+      };
+
+      /* 不能在 `if (win === null) return` 之后用 useMemo（hooks 数量必须稳定），
+         这里直接算；几百条分组成本可以忽略。 */
+      const hitGroups = (() => {
+        const groups = [];
+        const byFile = new Map();
+        hits.forEach((hit, index) => {
+          const file = String(hit?.file || '');
+          let group = byFile.get(file);
+          if (group === undefined) {
+            group = { file, rows: [] };
+            byFile.set(file, group);
+            groups.push(group);
+          }
+          group.rows.push({ hit, index });
+        });
+        return groups;
+      })();
+
       return h('div', {
         className: 'sl-result-window',
         role: 'dialog',
@@ -927,26 +996,28 @@
               )
               : hits.length === 0
               ? h('div', { className: 'sl-rw-empty' }, win.note || '没有匹配')
-              : hits.map((hit, index) => {
-                const kind = resultRowKind(hit);
-                return h('div', {
-                  key: `${hit.file}:${hit.line}:${index}`,
-                  role: 'option',
-                  'data-i': index,
-                  'aria-selected': win.selected === index ? 'true' : 'false',
-                  className: `sl-rw-row${win.selected === index ? ' active' : ''}`,
-                  title: rowTip(hit),
-                  onClick: () => onSelect(index, hit),
-                  onDoubleClick: () => onOpen(hit),
-                },
-                kind !== '' ? h(SymbolBadge, { kind }) : null,
-                hit.fn ? h('span', { className: 'sl-rw-fn' }, `${hit.fn}()`) : null,
-                h('span', { className: 'sl-rw-file' }, hit.file),
-                hit.pool ? h('span', { className: 'sl-rw-pool' }, `来自 ${hit.pool}`) : null,
-                hit.approx ? h('span', { className: 'sl-rw-pool sl-rw-approx', title: '近似符号：未注册语言，通用词法' }, '近似') : null,
-                h('span', { className: 'sl-rw-line' }, hit.line),
-                h('span', { className: 'sl-rw-text' }, String(hit.text || '').trim()),
-                hit.conf && hit.conf !== 'exact' ? h('span', { className: 'sl-rw-conf' }, hit.conf) : null,
+              : hitGroups.length <= 1
+              ? hits.map((hit, index) => resultRow(hit, index))
+              : hitGroups.map((group) => {
+                const open = openFiles.has(group.file);
+                const label = group.file === '' ? '（未标注文件）' : group.file;
+                return h('div', { key: `g:${group.file}`, className: 'sl-rw-fgroup' },
+                  h('div', {
+                    className: 'sl-rw-fhead',
+                    title: `${label} · ${group.rows.length} 处（单击展开/收起，双击打开第一处）`,
+                    onClick: () => setOpenFiles((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(group.file)) next.delete(group.file);
+                      else next.add(group.file);
+                      return next;
+                    }),
+                    onDoubleClick: () => { if (group.rows[0]) onOpen(group.rows[0].hit); },
+                  },
+                  h('span', { className: 'sl-rw-caret' }, open ? '[-]' : '[+]'),
+                  h('span', { className: 'sl-rw-fname' }, label),
+                  h('span', { className: 'sl-rw-count' }, `${group.rows.length} 处`),
+                  ),
+                  open ? h('div', { className: 'sl-rw-fbody' }, group.rows.map((row) => resultRow(row.hit, row.index))) : null,
                 );
               }),
       ),

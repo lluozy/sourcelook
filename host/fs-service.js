@@ -99,8 +99,11 @@ function extractMode(rel) {
  * reported so nobody has to infer it from a suspiciously round file count. */
 const MAX_FILES = 120000;
 const MAX_DEPTH = 20;
-const MAX_INDEX_SIZE = 5 * 1024 * 1024;  // F2.6: files above this are not indexed
-const MAX_OPEN_SIZE = 4 * 1024 * 1024;   // refuse to open anything larger
+/* 索引比打开更严：1MB 以上的文件基本都是自动生成的表（寄存器掩码、协议常量、
+   测试向量），没有手写逻辑，索引它们只会塞进几十万条无意义宏符号。
+   1~2MB 仍可打开阅读，只是不进索引（outline 为空、不参与符号查询）。 */
+const MAX_INDEX_SIZE = 1 * 1024 * 1024;  // F2.6: files above this are not indexed
+const MAX_OPEN_SIZE = 2 * 1024 * 1024;   // refuse to open anything larger
 
 /* ------------------------------------------------------------------ state */
 
@@ -1804,7 +1807,7 @@ async function readFile(absPath) {
   const io = ioFor(projectRoot);
   const stat = await io.stat(absPath);
   if (stat.size > MAX_OPEN_SIZE) {
-    const err = new Error('文件过大,暂不支持打开(> 4MB)');
+    const err = new Error('文件过大,暂不支持打开(> 2MB)');
     err.code = 'TOO_LARGE';
     throw err;
   }

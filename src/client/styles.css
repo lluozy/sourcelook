@@ -5869,3 +5869,27 @@ html[data-sourcelook-mode="C"] .sl-layer .sl-crumb-path {
 .sl-layer .sl-glb-body::-webkit-scrollbar-track,
 .sl-layer .sl-rw-list::-webkit-scrollbar-track,
 .sl-layer .sl-results-preview::-webkit-scrollbar-track { background: transparent; }
+
+/* ------------------- 结果窗按文件分组（1.5.114） ------------------- */
+/* 引用/查找结果按文件成组，组头可折叠；只有一个文件时仍平铺，不加多余层级。 */
+.sl-layer .sl-rw-fgroup { border-bottom: 1px solid var(--sl-border); }
+.sl-layer .sl-rw-fgroup:last-child { border-bottom: 0; }
+.sl-layer .sl-rw-fhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  cursor: pointer;
+  color: var(--sl-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.sl-layer .sl-rw-fhead:hover { background: var(--sl-pane-hover); }
+.sl-layer .sl-rw-fname {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-layer .sl-rw-fbody { padding-left: 14px; }
