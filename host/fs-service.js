@@ -3897,17 +3897,31 @@ async function enhanceExportReport(lang) {
  * 有没有把我的代码读歪"。40 个来自报告点名的文件，足以让写错的下标当场露馅
  * （比如把 `decl: 0` 写成 `decl: 1`，抽样的第一行就会变成"新增符号叫 struct mutex"）。
  */
-/** 取若干宏的定义（形参 + 宏体），按文件缓存读取。 */
-async function macroDefsFor(names) {
+/** 取若干宏的定义（形参 + 宏体），按文件缓存读取。
+ *
+ *  `preferRel`：同名宏在不同文件里有不同定义（`container_of` 有 nouveau 版本、
+ *  `WARN_ON` 有各 arch 版本）。给出调用点所在文件时按"通用程度"挑：
+ *  同文件 > include/linux/ > include/ > 其他 > arch/。 */
+async function macroDefsFor(names, preferRel) {
   const out = new Map();
   const root = projectRoot;
   const d = ensureDb();
   if (!d || !root) return out;
   const cache = new Map();
   const io = ioFor(root);
+  const rank = (h) => {
+    const f = String(h.file || '');
+    if (preferRel && f === preferRel) return 0;
+    if (f.startsWith('include/linux/')) return 1;
+    if (f.startsWith('include/')) return 2;
+    if (f.startsWith('arch/')) return 4;
+    return 3;
+  };
   for (const n of names) {
-    const hit = mapSymbols(d, n, { kinds: ['macro'], limit: 1 }, null)[0];
-    if (!hit) continue;
+    const hits = mapSymbols(d, n, { kinds: ['macro'], limit: 8 }, null);
+    if (!hits.length) continue;
+    hits.sort((a, b) => rank(a) - rank(b));
+    const hit = hits[0];
     let lines = cache.get(hit.file);
     if (!lines) {
       try { lines = (await io.readText(pjoin(root, hit.file))).split(/\r?\n/); }
@@ -3921,6 +3935,91 @@ async function macroDefsFor(names) {
     out.set(n, { params, body: String(hit.value || ''), file: hit.file, line: hit.line });
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ 宏展开
+ *
+ * 给阅读器"这一次调用展开成什么"的弹窗用。**单层**，不递归 —— 多层
+ * （ATOMIC_OPS → ATOMIC_OP → atomic_##op）需要隐藏集，等真有需求再说。
+ * 只做三件事：`##` 拼接、`#` 字符串化、形参替换；其余原样保留。
+ */
+
+/** 按顶层逗号切实参（括号/方括号/花括号里的逗号不算）。 */
+function splitTopArgs(text) {
+  const s = String(text || '');
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') depth -= 1;
+    else if (ch === ',' && depth === 0) { out.push(s.slice(start, i)); start = i + 1; }
+  }
+  out.push(s.slice(start));
+  return out.map((t) => t.trim()).filter((t) => t.length > 0);
+}
+
+/** 宏体 + 形参 + 实参 → 展开文本（单层）。 */
+function renderExpansion(body, params, args) {
+  const map = new Map();
+  (params || []).forEach((p, i) => map.set(p, args[i] === undefined ? '' : String(args[i]).trim()));
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let text = String(body || '').replace(/\\\s*\n\s*/g, ' ');
+  /* `#param` 字符串化：只对形参生效。 */
+  text = text.replace(/#\s*([A-Za-z_]\w*)/g, (m, n) => (map.has(n) ? JSON.stringify(map.get(n)) : m));
+  /* `a ## b`：两侧先换成实参再粘。 */
+  text = text.replace(/([A-Za-z_]\w*)\s*##\s*([A-Za-z_]\w*)/g, (m, a, b) => {
+    const va = map.has(a) ? map.get(a) : a;
+    const vb = map.has(b) ? map.get(b) : b;
+    return va + vb;
+  });
+  /* 剩余形参一次替换，避免"实参里含形参名"被二次替换。 */
+  const names = (params || []).filter(Boolean);
+  if (names.length) {
+    const re = new RegExp('\\b(?:' + names.map(escRe).join('|') + ')\\b', 'g');
+    text = text.replace(re, (m) => (map.has(m) ? map.get(m) : m));
+  }
+  /* 续行拼接留下成片的制表符/空格，压成单个空格 —— 展开结果本来就是一行。 */
+  return text.replace(/[ \t]+/g, ' ').trim();
+}
+
+/** 一次宏调用的展开结果（读调用处的实参原文）。 */
+async function expandMacro(want, rel, opts) {
+  const line = Number(opts && opts.line) || 0;
+  const column = Number(opts && opts.column) || 0;
+  if (!want || !rel || line <= 0) return { ok: false, reason: '需要一个具体位置' };
+  const def = (await macroDefsFor([want], rel)).get(want);
+  if (!def) return { ok: false, reason: `索引里没有 \`${want}\` 的对象宏定义` };
+
+  let args = [];
+  try {
+    const text = await ioFor(projectRoot).readText(pjoin(projectRoot, rel));
+    const lines = text.split(/\r?\n/);
+    const from = (lines[line - 1] || '').slice(Math.max(0, column - 1));
+    const open = from.indexOf('(');
+    if (open >= 0) {
+      const joined = [from.slice(open + 1)].concat(lines.slice(line, line + 20)).join('\n');
+      let depth = 1;
+      let end = -1;
+      for (let i = 0; i < joined.length; i += 1) {
+        const ch = joined[i];
+        if (ch === '(') depth += 1;
+        else if (ch === ')') { depth -= 1; if (depth === 0) { end = i; break; } }
+      }
+      if (end >= 0) args = splitTopArgs(joined.slice(0, end));
+    }
+  } catch { /* 读不到调用处就按空实参展开 */ }
+
+  return {
+    ok: true,
+    macro: want,
+    params: def.params,
+    args,
+    body: def.body,
+    text: renderExpansion(def.body, def.params, args),
+    def: { file: def.file, line: def.line },
+  };
 }
 
 /**

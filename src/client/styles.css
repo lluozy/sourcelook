@@ -5587,6 +5587,14 @@ body[data-ds-dark-theme] .sl-dsh-size:active { background: rgba(27, 27, 28, .92)
   border-radius: 4px;
   pointer-events: none;
 }
+
+/* 英文文案普遍比中文长（"符号搜索" → "Search symbols"）：按钮和菜单项一律
+   不换行，否则高度被撑开、相邻元素被挤走；标题和空态说明允许在长单词处断行。 */
+.sl-btn,
+.sl-menu-item,
+.sl-top-action { white-space: nowrap; }
+.sl-empty-title,
+.sl-empty-hint { overflow-wrap: anywhere; }
 /* D 模式保留挂载（编辑器不重建），只把插件层隐藏。 */
 html[data-sourcelook-mode="D"] .sl-layer {
   display: none !important;

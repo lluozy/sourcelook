@@ -14,7 +14,9 @@ L.register('javascript', {
   id: 'javascript',
   name: 'JavaScript',
   indexId: 12,
-  extensions: ['js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'mts', 'cts'],
+  /* ts / tsx 在 lang/typescript.js 里（它借用本表的规则、换 TS grammar）；
+     留在这里会被 entryFor 先命中，导致类型注解被当成符号名。 */
+  extensions: ['js', 'mjs', 'cjs', 'jsx'],
 
   lexical: {
     comment: { line: '//', blockStart: '/*', blockEnd: '*/', nested: false },
