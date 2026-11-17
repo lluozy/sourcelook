@@ -3,7 +3,7 @@
 > 最后更新：2026-11-17 · 版本 **1.5.113** · 许可证 Apache-2.0
 >
 > 这份文档是「接手新任务」的入口：项目是什么、现在能做什么、代码在哪、怎么改、有哪些坑。
-> 逐版历史见 `HANDOFF-NEXT.md`；更早的原始交接见 `HANDOFF.md`（部分描述已过时）。
+> 逐版历史见 `docs/dev/HANDOFF-NEXT.md`；更早的原始交接见 `docs/dev/HANDOFF.md`（部分描述已过时）。
 
 ---
 
@@ -169,3 +169,25 @@ node scripts/smoke-index.cjs    # 索引/大纲/定义/引用
 4. **宁可没有，不要错**：解析不确定时给说明或走近似符号，不产假符号。
 5. `client.js` 是构建产物，永远改 `src/client/`。
 6. 改完 JS 先 `node --check`；改界面后重启 DSH。
+
+## 13. 目录约定
+
+```
+根目录（正式内容，全部入库）
+  index.js  client.js  icon.svg  cordis.patch.yml  package.json
+  README.md  README.en.md  PROJECT.md  LICENSE  NOTICE
+  src/  host/  renderer-lib/  vendor/  locale/     源码与资源
+  scripts/                                         构建与冒烟
+  test/fixture/                                    测试夹具（CI 依赖，必须入库）
+  docs/screenshots/                                README 截图
+  docs/dev/                                        历史决策与交接（HANDOFF*.md / *PLAN.md / PLUGIN-RULES.md）
+
+工作区（本地，不入库）
+  tmp/      临时脚本、日志、一次性探针  ← 所有临时物都放这里
+  data/     索引缓存（约 1.2 GB）
+  dist/     打包产物
+  tools/    本机工作流脚本（三个 .cmd，CodeBuddy 用）
+```
+
+**规则**：新产生的临时文件一律进 `tmp/`；根目录不再落 `.md` / `.cjs` / `.log` / `.png`。
+`tmp/`、`data/`、`dist/`、`tools/` 都已写进 `.gitignore`，`git status` 应永远干净。

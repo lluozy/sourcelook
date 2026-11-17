@@ -11,6 +11,9 @@ tmp/
 # ---- 发布打包产物 ----
 dist/
 
+# ---- 本地开发工具（CodeBuddy 工作流脚本，不入库）----
+tools/
+
 # 冒烟测试往 fixture 里写的临时文件
 test/fixture/scratch.txt
 
