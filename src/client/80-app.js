@@ -3079,6 +3079,22 @@
             remember(payload, { file: active, line });
             return;
           }
+          /* 接收者链里有宏（`sk->sk_prot->bind` 的 `sk_prot`）：不展开猜类型，
+             提示先看宏定义。 */
+          if (defData?.status === 'macroInChain') {
+            const payload = {
+              title: `${word} · 中间是宏`,
+              word,
+              kind: 'context',
+              items: defData.items || [],
+              refs: [],
+              note: defData.note || '接收者链里有宏，先看宏定义',
+              preview: { file: active, line },
+            };
+            showResults(payload);
+            remember(payload, { file: active, line });
+            return;
+          }
           /* goto 标签：C 的标签是独立命名空间，源码里没有"定义"这回事。 */
           if (defData?.status === 'label') {
             const payload = {

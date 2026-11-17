@@ -3822,6 +3822,25 @@ async function findDefinition(name, rel, options) {
       }
     }
     if (owners.length === 0) {
+      /* 接收者最后一段可能是**字段别名宏**：`sk->sk_prot` 的 `sk_prot` 是
+         `#define sk_prot __sk_common.skc_prot`。**不展开宏体去猜类型** ——
+         那一步很容易猜错 —— 而是把链条停在宏这一段，让用户先看宏定义。 */
+      const seg = (/[A-Za-z_]\w*$/.exec(String(expr || '').trim()) || [])[0] || '';
+      if (seg !== '' && seg !== want) {
+        const macros = mapSymbols(d, seg, { kinds: ['macro'], limit: 2 }, pool);
+        if (macros.length > 0) {
+          const m = macros[0];
+          const body = String(m.value || '').trim();
+          const items = [{ file: m.file, line: m.line, name: m.name, kind: 'macro' }];
+          return {
+            ...result([]),
+            status: 'macroInChain',
+            note: `\`${seg}\` 是宏${body !== '' ? `（\`${body}\`）` : ''}，\`${want}\` 的归属类型取决于宏展开；先看 \`${seg}\` 的定义`,
+            items,
+            target: items[0]
+          };
+        }
+      }
       return { ...result([]), status: 'unresolved', reason: `无法解析接收者 \`${expr}\` 的类型` };
     }
     let base = owners[0];

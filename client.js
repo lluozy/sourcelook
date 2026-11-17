@@ -18,9 +18,9 @@ window.__ModuleLoader__.load({
 
     const NS = 'sourcelook';
     const API = '/api/sourcelook';
-    const BUILD_TAG = '2026-11-17-b9';
+    const BUILD_TAG = '2026-11-17-b10';
     /* SourceLook 插件自身的版本号（与 DSH 无关）；关于对话框显示它。 */
-    const PLUGIN_VERSION = '1.5.122';
+    const PLUGIN_VERSION = '1.5.123';
     const HEADER = 'x-sourcelook';
 
     const MODE_KEY = 'sourcelook.mode';
@@ -8026,6 +8026,22 @@ window.createMonacoAdapter = createMonacoAdapter;
               items: [],
               refs: [],
               note: defData.note || '宏体里的形参 / 拼接片段,不是符号',
+              preview: { file: active, line },
+            };
+            showResults(payload);
+            remember(payload, { file: active, line });
+            return;
+          }
+          /* 接收者链里有宏（`sk->sk_prot->bind` 的 `sk_prot`）：不展开猜类型，
+             提示先看宏定义。 */
+          if (defData?.status === 'macroInChain') {
+            const payload = {
+              title: `${word} · 中间是宏`,
+              word,
+              kind: 'context',
+              items: defData.items || [],
+              refs: [],
+              note: defData.note || '接收者链里有宏，先看宏定义',
               preview: { file: active, line },
             };
             showResults(payload);
