@@ -23,6 +23,13 @@
 "名字参数"这一个真符号，噪声消失。11 个名字的引用全部落到
 `include/trace/events/*.h` 的 `DECLARE_TRACE` / `DEFINE_EVENT` 声明上。
 
+**1.5.112 / 1.5.113（同日，CI 修通）**：`release.yml` 踩了两个坑 ——
+① runner 上没有 `zip` 命令 → 改用 `python3 -m zipfile`；
+② 冒烟脚本读 `tmp/fixture`，而 `tmp/` 被 `.gitignore` 排除，checkout 后没有 fixture
+→ 把 fixture 移到 **`test/fixture/`**（5 个小文件）并改两个脚本的路径。
+现在打 `v*` tag 会自动「构建 → 语法检查 → 冒烟 → 打包 → 建 release」，
+`v1.5.113` 实测成功（附件 `SourceLook-1.5.113.zip`，6.8 MB）。
+
 **1.5.111（同日，语言索引 + CI + 英文防挤）**：
 ① **JS / Python / Java 的符号索引其实早就写好、只是没验证过** —— 实测 JS 11 个符号全对、
 Python 13 个全对；Java 基本可用（字段同时记成 `member` 和 `variable`，有重复）。
