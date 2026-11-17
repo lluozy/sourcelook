@@ -42,7 +42,7 @@ const LANG = globalThis.Lang;
 /* 解析器「内容版本」。**只要字段/成员/符号的提取逻辑有变化就改这里**：
    索引里会记下建它时用的版本，加载时不一致就标记过期（提示重建），
    避免"解析器修好了、磁盘上还是旧索引"这种静默错答（2026-11-15 位域成员问题）。 */
-const PARSER_REV = '2026-11-17-01';
+const PARSER_REV = '2026-11-17-02';
 
 let SYN = {};
 /* 词法块（lexical）：语言自己的"内容长相"判据（如汇编伪指令行数）住在表里。 */
@@ -349,6 +349,54 @@ function blankAttributes(text) {
        记进来只会把命中列表撑满，而用户关心的是自己写的那几条。 */
     if (PACK_MASK.has(m)) bumpHit(m);
   });
+}
+
+/**
+ * 块注释等长空格化（只动注释，别的一概不碰）。
+ *
+ * 为什么必须在解析前做：多行宏体里夹注释会让 tree-sitter 的
+ * `preproc_function_def` 断掉。实测 `include/drm/drm_atomic.h`：
+ * 14 个带续行的宏只认出 11 个，其中 3 个名字被错取成宏**参数名**
+ * （`old_connector_state`），`for_each_new_connector_in_state` 整个丢失。
+ * 注释在预处理阶段本来就被删掉，这里提前抹平后 15 个宏全部正确。
+ *
+ * 逐字符扫描而不是正则：正则会把字符串里的 `"/*"` 当作注释开头，
+ * 一直吃到下一个星号斜杠，把正常代码抹成空白。
+ */
+function maskBlockComments(text) {
+  if (!text || text.indexOf('/*') < 0) return text;
+  const n = text.length;
+  let out = '';
+  let last = 0;
+  let i = 0;
+  while (i < n) {
+    const ch = text[i];
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      i += 1;
+      while (i < n) {
+        if (text[i] === '\\') { i += 2; continue; }
+        if (text[i] === quote) { i += 1; break; }
+        if (text[i] === '\n') break;          /* 未闭合字面量：留给解析器去抱怨 */
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '*') {
+      const start = i;
+      i += 2;
+      while (i < n && !(text[i] === '*' && text[i + 1] === '/')) i += 1;
+      i = Math.min(n, i + 2);
+      out += text.slice(last, start);
+      out += text.slice(start, i).replace(/[^\n]/g, ' ');
+      last = i;
+      continue;
+    }
+    i += 1;
+  }
+  if (last === 0) return text;
+  out += text.slice(last);
+  return out;
 }
 
 /** 上界：一个大写名字的宏调用 —— 用来发现「没登记的宏」，不是判断语义。 */
@@ -1685,7 +1733,7 @@ function extract(text, relPath) {
      `static int __init f(void)` is torn into a variable named `__init` plus a
      definition whose "type" is `f` - and `f` is then never a function at all
      (see blankAttributes). */
-  const tree = parser.parse(blankAttributes(text));
+  const tree = parser.parse(blankAttributes(maskBlockComments(text)));
   const src = text;      // node offsets index the ORIGINAL text
 
   /* Pass 1 first: without the set of type names, a typedef'd name used as a type
