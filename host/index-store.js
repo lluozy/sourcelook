@@ -1256,10 +1256,24 @@ function openFromReader(rd) {
         if (mask && !mask[langs[b.readUInt32LE(8)]]) continue;
         const kf = b.readUInt32LE(4);
         const kind = KINDS[kf & 0xFF] || 'variable';
-        const parent = strAt(b.readUInt32LE(20));
         const fileId = b.readUInt32LE(8);
+        /* `parent` 是字符串表查找，别为每条记录都做：`dev` 这类名字有数万条
+           记录、命中几十条，逐条 strAt 就是几百毫秒。accept 只在真的问 parent
+           时才解析（惰性 getter），没通过的直接跳过。 */
+        let parentReady = false;
+        let parentValue = '';
+        const info = {
+          kind,
+          fileId,
+          get parent() {
+            if (!parentReady) { parentValue = strAt(b.readUInt32LE(20)); parentReady = true; }
+            return parentValue;
+          }
+        };
         /* Cheap fields first: the predicate looks at kind/parent/fileId only. */
-        if (accept && !accept({ kind, parent, fileId })) continue;
+        if (accept && !accept(info)) continue;
+        if (!parentReady) { parentValue = strAt(b.readUInt32LE(20)); parentReady = true; }
+        const parent = parentValue;
         out.push({
           name,
           kind,
@@ -1289,7 +1303,13 @@ function openFromReader(rd) {
      * here: a symbol of that name in the index means the reference is exact,
      * otherwise it is a name-only hit and says so (SPEC F1.12 / D16).
      */
-    references(name, pool) {
+    references(name, pool, options) {
+      /* 可选 `accept({kind,fileId})` 与 `limit`：让调用方在**构造对象之前**
+         筛掉不要的记录，并给高频名字一个上限（`dev` 一类有一万多条引用，
+         全量构造 + 每条 3 次字符串表查找就是 1.7 秒）。 */
+      const refOpt = options && typeof options === 'object' ? options : null;
+      const refAccept = refOpt && typeof refOpt.accept === 'function' ? refOpt.accept : null;
+      const refCap = refOpt && Number(refOpt.limit) > 0 ? Number(refOpt.limit) : 0;
       const id = idOf(name);
       if (id === 0xFFFFFFFF) return [];
       /* 池内的"定义"与"引用"是同一件事的两面：绑定判定也只认本池的定义，
@@ -1345,17 +1365,21 @@ function openFromReader(rd) {
 
       const r = rangeOf(seg.refs, REC_REF, id);
       const out = [];
+      let refStopped = false;
       for (let i = r.first; i < r.first + r.count; i++) {
+        if (refCap && out.length >= refCap) { refStopped = true; break; }
         const b = rec(seg.refs, REC_REF, i);
         const flags = b.readUInt32LE(16);
         const fileId = b.readUInt32LE(4);
         if (mask && !mask[langs[fileId]]) continue;
+        const refKindName = REF_KIND_NAME[flags & 0xFF] || 'read';
+        if (refAccept && !refAccept({ kind: refKindName, fileId })) continue;
         out.push({
           name,
           fileId,
           line: b.readUInt32LE(8),
           column: b.readUInt32LE(12),
-          kind: REF_KIND_NAME[flags & 0xFF] || 'read',
+          kind: refKindName,
           /* Exactness is claimed at three levels of evidence, strongest first:
            *   - a name that C makes unique in the program (function / type /
            *     macro) binds wherever it appears;
@@ -1375,6 +1399,7 @@ function openFromReader(rd) {
           to: strAt(b.readUInt32LE(20))
         });
       }
+      if (refStopped && refOpt && typeof refOpt.onStop === 'function') refOpt.onStop();
       return out;
     },
 

@@ -1,6 +1,6 @@
 # SourceLook 交接文档（新任务从这里开始）
 
-> 更新时间：2026-11-17 · 版本 **1.5.105** · 逐版历史见同目录 `HANDOFF.md`（每版一节，含实测数据）
+> 更新时间：2026-11-17 · 版本 **1.5.109** · 逐版历史见同目录 `HANDOFF.md`（每版一节，含实测数据）
 
 ---
 
@@ -22,6 +22,28 @@
 当未知宏做递归展开，吐出一批 `__tracepoint_*` 之类的**假符号**；现在按规则只造
 "名字参数"这一个真符号，噪声消失。11 个名字的引用全部落到
 `include/trace/events/*.h` 的 `DECLARE_TRACE` / `DEFINE_EVENT` 声明上。
+
+**1.5.108 / 1.5.109（同日，标题栏入口改成图标）**：D 模式的 SourceLook 入口从
+文字按钮换成图标，28×28 方形，位置仍按 DSH 菜单右边缘 +14px 计算（比文字版省
+约 60px 宽度），`title` / `aria-label` 保留"打开 SourceLook"。1.5.108 先用的是
+插件品牌图标（`icon.svg`）；1.5.109 按用户要求换成**原版 KernelSight 标题栏左侧
+那张 app 图标** —— 源文件 `code-reader/app/src/renderer/assets/icon.png`，
+缩成 64px 存为 `vendor/kernelsight.png`（5.5KB），经已有的
+`/api/sourcelook/vendor/` 静态路由发出，不额外加路由。
+
+**1.5.107（同日，单击响应优化）**：主因是 `/references` 的**全量遍历**——
+`dev` 这类名字有上万条引用，过去每条都要构造对象 + 3 次字符串表查找（实测 1778 ms）。
+现在索引层支持 `accept` / `limit`：按 kind 先筛、够量即停；`symbolsWhere` 的
+`parent` 改成惰性解析（只对通过筛选的少数记录查字符串表）。实测 `dev` 引用
+1778→256 ms、定义 718→144 ms，`skb` 引用 256→109 ms。客户端两处预览
+（结果窗 / 底部上下文窗）共用一份 in-flight，同一文件不再读两遍。
+**端到端单击约 150–250 ms**（原来 host 侧就要 400–560 ms）。
+
+**1.5.106（同日，两处修复）**：
+① 「选中整个函数」的结束行改成**花括号配对**（原来是"下一个函数符号 - 1"）；
+② D 模式标题栏的 SourceLook 入口原来写死 `left:136px`，而 DSH「应用 / 编辑」
+菜单右边缘在 **146px** —— 按钮其实**压在菜单上 10px**；现在按菜单实际右边缘
+`+14px` 定位（`--sl-pill-left`，实测 gap=14），换语言/字号也不会贴住。
 
 ---
 
@@ -282,8 +304,13 @@ UI：`src/client/80-app.js` 增加 `macroParam` / `protoParam` 两个 `status` �
 
 ## 7. 遗留问题（不在本轮范围）
 
-1. **右键「选中整个函数」**在 `net/core/skbuff.c` 的 `skb_queue_tail` 只选中签名 1 行（应到函数结尾）——
-   函数边界/括号配对问题，未查。
+1. ~~**右键「选中整个函数」只选中签名 1 行**~~ ✅ **1.5.106 已修**（两个原因叠加）：
+   - **真凶**：`adapter.revealLine()` 内部会 `editor.setPosition({line})`，把刚设好的
+     选区冲成单行 —— 边界其实一直算对了。已把调用顺序改成「先 revealLine、后 setSelection」。
+   - 顺带把结束行从"符号表里下一个函数 - 1"换成**花括号配对**（跳过字符串/行注释/块注释），
+     不再依赖索引里相邻符号的行号是否连续。
+   实测（CDP 真实点击菜单项）：`skb_queue_tail` 选中 **3225–3232**；算法另测
+   `skb_queue_head` 3204→3211、`skb_unlink` 3245→3252 全对。
 2. ~~**C 模式布局**~~ **不是缺陷，是刻意设计**（用户 2026-11-17 明确）：C 模式下
    DSH 面板盖住右侧约 200px 编辑区 + 右符号窗，就是这么设计的 —— **不要去"修"**。
 3. **DSH 的 `:has()` 规则**导致 Files 页填充模式有副作用（插件已在运行期改写选择器绕过，建议上报 DSH 根治）。
@@ -329,6 +356,45 @@ UI：`src/client/80-app.js` 增加 `macroParam` / `protoParam` 两个 `status` �
 | `tmp/explain-check.cjs` | 新增：9 项回归（tracepoint 3 + 宏参数 2 + 原型形参 3 + 标注宏 1） |
 | `tmp/unresolved-audit.cjs` | 口径改为 `explained`（`builtin`/`macroParam`/`protoParam` 都不算 unresolved） |
 | `package.json` / `src/client/00-header.js` | 版本 → 1.5.105（`BUILD_TAG` → `2026-11-17-a1`） |
+
+### 1.5.106 改动清单
+
+| 文件 | 改了什么 |
+|---|---|
+| `src/client/80-app.js` | ① `selectFunction()` 的结束行改为**花括号配对**（跳过字符串/行注释/块注释），不再用"符号表里下一个函数 - 1"；② 把 `revealLine` 调到 `setSelection` **之前** —— `revealLine` 内部 `setPosition` 会清掉选区，这是"只选中 1 行"的真凶 |
+| `src/client/50-shell.js` | `syncDshMenu()` 的 D 模式分支：按 `[data-windows-menu]` 的实际右边缘写 `--sl-pill-left`（+14px），值未变时不重复写 |
+| `src/client/styles.css` | `.sl-pill` 的 `left: 136px` → `left: var(--sl-pill-left, 144px)` |
+| `tmp/alg-check.cjs` | 新增：括号配对在 `skbuff.c` 三个函数上的验证（3225→3232 / 3204→3211 / 3245→3252） |
+| `package.json` / `src/client/00-header.js` | 版本 → 1.5.106（`BUILD_TAG` → `2026-11-17-a2`） |
+
+### 1.5.107 改动清单（单击响应）
+
+| 文件 | 改了什么 |
+|---|---|
+| `host/index-store.js` | `symbolsWhere()` 的 `parent` 改惰性 getter（accept 通过才查字符串表）；`references()` 新增可选 `accept({kind,fileId})` / `limit` / `onStop`，过滤在**构造对象之前**、够量即停 |
+| `host/fs-service.js` | `findReferences()` 把 kind/fileOnly 过滤下沉成 `accept`，非成员/非 fileOnly 时给 `limit*4` 上限；因早停而截断时 `truncated=true` |
+| `src/client/80-app.js` | 新增 `previewPendingRef`：`previewResult` 与 `loadResultPreview` 共用同一份"正在读"，同一文件不再并发读两遍 |
+| `tmp/perf-ctx.cjs` / `perf-ctx2.cjs` | 新增：单击链路 host 侧耗时探针（改前/改后对照） |
+| `package.json` / `src/client/00-header.js` | 版本 → 1.5.107（`BUILD_TAG` → `2026-11-17-a3`） |
+
+### 1.5.108 改动清单（标题栏入口）
+
+| 文件 | 改了什么 |
+|---|---|
+| `src/client/55-icons.js` | 新增 `case 'sourcelook'`：内联 `icon.svg` 的品牌图形（蓝底 + 白色 `< >` + 绿色镜头），颜色写死不随主题变 |
+| `src/client/80-app.js` | D 模式 pill 的文本换成 `h(Icon, { name: 'sourcelook', size: 20 })`，补 `aria-label` |
+| `src/client/styles.css` | `.sl-pill` 从文字按钮（`padding: 0 10px`）改成 28×28 方形、内容居中 |
+| `package.json` / `src/client/00-header.js` | 版本 → 1.5.108（`BUILD_TAG` → `2026-11-17-a4`） |
+
+### 1.5.109 改动清单（换成原版 app 图标）
+
+| 文件 | 改了什么 |
+|---|---|
+| `vendor/kernelsight.png` | 新增：原版 `code-reader/app/src/renderer/assets/icon.png` 的 64px 缩放版（5.5KB） |
+| `src/client/80-app.js` | D 模式 pill 内容改成 `<img class="sl-pill-icon" src="${API}/vendor/kernelsight.png">` |
+| `src/client/55-icons.js` | 删掉 1.5.108 临时加的 `case 'sourcelook'`（不再用内联 SVG） |
+| `src/client/styles.css` | 新增 `.sl-pill-icon`（20×20、圆角 4px、`pointer-events: none`） |
+| `package.json` / `src/client/00-header.js` | 版本 → 1.5.109（`BUILD_TAG` → `2026-11-17-a5`） |
 
 ---
 

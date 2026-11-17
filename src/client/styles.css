@@ -5555,25 +5555,37 @@ body[data-ds-dark-theme] .sl-dsh-size:active { background: rgba(27, 27, 28, .92)
 .sl-layer .sl-pane-hot:hover .sl-pane-restore.right {
   transform: translateY(-50%);
 }
-/* DSH 模式下的 SourceLook 入口：放在标题栏"应用 / 编辑"之后，做成普通文字按钮。 */
+/* DSH 模式下的 SourceLook 入口：放在标题栏"应用 / 编辑"之后，做成普通文字按钮。
+   left 由 syncDshMenu 按菜单实际右边缘写入（--sl-pill-left），换语言/字号
+   后菜单变宽也不会贴住；144px 只是菜单还没渲染时的兜底。 */
 .sl-pill {
   top: 8px !important;
-  left: 136px !important;
+  left: var(--sl-pill-left, 144px) !important;
   right: auto !important;
+  width: 28px !important;
   height: 28px !important;
-  padding: 0 10px !important;
+  padding: 0 !important;
   gap: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   border: 0 !important;
   border-radius: 6px !important;
   background: transparent !important;
   color: var(--dsw-alias-label-secondary, #5f6368) !important;
   box-shadow: none !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
 }
 .sl-pill:hover {
   background: var(--dsw-alias-bg-layer-1, rgba(0, 0, 0, .06)) !important;
   color: var(--dsw-alias-label-primary, #111) !important;
+}
+/* 原版 KernelSight 的 app 图标：浅底圆角方块，20px 放进 28px 按钮里。 */
+.sl-pill-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  border-radius: 4px;
+  pointer-events: none;
 }
 /* D 模式保留挂载（编辑器不重建），只把插件层隐藏。 */
 html[data-sourcelook-mode="D"] .sl-layer {

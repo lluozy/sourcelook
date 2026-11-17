@@ -610,6 +610,8 @@
       const symbolOpenRef = useRef(false);
       symbolOpenRef.current = symbolOpen;
       const previewCacheRef = useRef(new Map());
+      /* 同一文件的"正在读"请求：避免并发重复读（见 previewResult）。 */
+      const previewPendingRef = useRef(new Map());
       const previewSeqRef = useRef(0);
       /* 底部上下文窗（定义/代码/引用）与结果窗是两个独立目标，各用一个序号：
          快速连点时只允许“最新一次请求”落地，否则旧应答会覆盖新选中行。 */
@@ -2400,13 +2402,25 @@
         }
         commit({ file, line, content: '', loading: true, error: null });
         try {
-          const data = await api(`/file?path=${encodeURIComponent(file)}`, undefined, sessionRef.current);
-          if (previewCacheRef.current.size >= 8) {
-            const first = previewCacheRef.current.keys().next().value;
-            if (first !== undefined) previewCacheRef.current.delete(first);
+          /* 同一次点击会连着要两次预览（结果窗 + 底部上下文窗），两次都在
+             await 之前 miss 缓存 → 同一个文件读两遍（实测 30–90 ms ×2）。
+             并发只发一次请求，后来者等同一个 Promise。 */
+          let pending = previewPendingRef.current.get(file);
+          if (pending === undefined) {
+            pending = api(`/file?path=${encodeURIComponent(file)}`, undefined, sessionRef.current)
+              .then((data) => {
+                if (previewCacheRef.current.size >= 8) {
+                  const first = previewCacheRef.current.keys().next().value;
+                  if (first !== undefined) previewCacheRef.current.delete(first);
+                }
+                previewCacheRef.current.set(file, data.content);
+                return data.content;
+              })
+              .finally(() => { previewPendingRef.current.delete(file); });
+            previewPendingRef.current.set(file, pending);
           }
-          previewCacheRef.current.set(file, data.content);
-          commit({ file, line, content: data.content, loading: false, error: null });
+          const content = await pending;
+          commit({ file, line, content, loading: false, error: null });
         } catch (error) {
           commit({ file, line, content: '', loading: false, error: errorText(error, tRef.current) });
         }
@@ -2464,9 +2478,24 @@
         }
         commit({ file: hit.file, line, content: '', loading: true, error: null });
         try {
-          const data = await api(`/file?path=${encodeURIComponent(hit.file)}`, undefined, sessionRef.current);
-          previewCacheRef.current.set(hit.file, data.content);
-          commit({ file: hit.file, line, content: data.content, loading: false, error: null });
+          /* 与 previewResult 共用同一份"正在读"：结果窗和底部窗常常同时
+             要同一个文件的预览，否则同一文件会被读两遍。 */
+          let pending = previewPendingRef.current.get(hit.file);
+          if (pending === undefined) {
+            pending = api(`/file?path=${encodeURIComponent(hit.file)}`, undefined, sessionRef.current)
+              .then((data) => {
+                if (previewCacheRef.current.size >= 8) {
+                  const first = previewCacheRef.current.keys().next().value;
+                  if (first !== undefined) previewCacheRef.current.delete(first);
+                }
+                previewCacheRef.current.set(hit.file, data.content);
+                return data.content;
+              })
+              .finally(() => { previewPendingRef.current.delete(hit.file); });
+            previewPendingRef.current.set(hit.file, pending);
+          }
+          const content = await pending;
+          commit({ file: hit.file, line, content, loading: false, error: null });
         } catch (error) {
           commit({ file: hit.file, line, content: '', loading: false, error: errorText(error, tRef.current) });
         }
@@ -3828,14 +3857,50 @@ ${following.join('\n')}
           flashStatus('光标不在函数里', 'warn');
           return;
         }
-        const next = (outlineRef.current.symbols || [])
-          .filter((symbol) => String(symbol.kind || '').toLowerCase() === 'function' && Number(symbol.line) > start)
-          .sort((a, b) => Number(a.line) - Number(b.line))[0];
-        const lastLine = model.getLineCount();
-        const end = next ? Math.max(start, Number(next.line) - 1) : lastLine;
+        /* 结束行靠**花括号配对**算，不再用"符号表里下一个函数 - 1"：
+           相邻函数符号的行号不一定连续（符号表有顺序/噪声），曾退化成只选中
+           签名 1 行。数括号只看文本，不受索引影响。 */
+        const total = model.getLineCount();
+        let depth = 0;
+        let seen = false;
+        let block = false;
+        let end = total;
+        for (let lineNo = start; lineNo <= total; lineNo += 1) {
+          const text = model.getLineContent(lineNo);
+          let stop = false;
+          for (let i = 0; i < text.length; i += 1) {
+            const ch = text[i];
+            if (block) {
+              if (ch === '*' && text[i + 1] === '/') { block = false; i += 1; }
+              continue;
+            }
+            if (ch === '/' && text[i + 1] === '*') { block = true; i += 1; continue; }
+            if (ch === '/' && text[i + 1] === '/') break;
+            if (ch === '"' || ch === "'") {
+              const quote = ch;
+              i += 1;
+              while (i < text.length) {
+                if (text[i] === '\\') { i += 2; continue; }
+                if (text[i] === quote) break;
+                i += 1;
+              }
+              continue;
+            }
+            if (ch === '{') { depth += 1; seen = true; continue; }
+            if (ch === '}') {
+              depth -= 1;
+              if (seen && depth === 0) { end = lineNo; stop = true; break; }
+              if (depth < 0) { end = start; stop = true; break; }
+            }
+          }
+          if (stop) break;
+        }
         try {
-          adapter.setSelection({ start: { line: start, column: 1 }, end: { line: end, column: model.getLineMaxColumn(end) } });
+          /* 顺序要紧：adapter.revealLine() 内部会 `setPosition({line: start})`，
+             那会把选区清成单行 —— 以前"只选中签名 1 行"的真凶就是它
+             （边界其实算对了）。所以先滚动、后设选区，最后一次写入生效。 */
           adapter.revealLine?.(start, true);
+          adapter.setSelection({ start: { line: start, column: 1 }, end: { line: end, column: model.getLineMaxColumn(end) } });
           flashStatus(`已选中整个函数（${start}–${end} 行）`);
         } catch {
           flashStatus('选中失败', 'error');
@@ -5942,6 +6007,13 @@ h('button', {
           className: 'sl-pill',
           onClick: () => setMode(lastOpenModeRef.current),
           title: t('openApp'),
-        }, 'SourceLook') : null,
+          'aria-label': t('openApp'),
+        }, h('img', {
+          className: 'sl-pill-icon',
+          /* 原版 KernelSight 标题栏左侧那张 app 图标（64px 缩放版，随 vendor 静态路由发出）。 */
+          src: `${API}/vendor/kernelsight.png`,
+          alt: '',
+          draggable: false,
+        })) : null,
       );
     }

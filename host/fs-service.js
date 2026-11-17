@@ -2382,24 +2382,39 @@ async function findReferences(name, rel, options) {
   const symKind = String(opts.kind || '').toLowerCase();
   const allowedRefKinds = REF_KIND_TABLE[symKind] || null;
   let definitions = mapSymbols(d, want, { limit: 60 }, pool);
-  const rawAll = d.references(want, pool);
-  let raw = rawAll;
-  if (fileOnly && rel) raw = rawAll.filter((r) => d.file(r.fileId).rel === rel);
-  /* 成员引用先只留字段访问（`to="field skb"`），再按接收者类型收窄。 */
+  /* 过滤下沉到索引层：`dev` 这类名字有一万多条引用，先按 kind/fileId 筛掉，
+     再为通过的少量记录构造对象（每条 3 次字符串表查找）。 */
   const ownerType = String(opts.parent || '').trim();
-  if ((symKind === 'member' || symKind === 'enum_member') && ownerType !== '') {
+  const memberMode = (symKind === 'member' || symKind === 'enum_member') && ownerType !== '';
+  const fid = fileOnly && rel ? d.fileIdOf(rel) : -1;
+  const wantFileId = (typeof fid === 'number' && fid >= 0) ? fid : -1;
+  const kindSet = allowedRefKinds !== null ? new Set(allowedRefKinds.map(String)) : null;
+  const refAccept = (kindSet || wantFileId >= 0)
+    ? (r) => (kindSet === null || kindSet.has(String(r.kind || '')))
+      && (wantFileId < 0 || r.fileId === wantFileId)
+    : null;
+  /* 成员收窄要看到全部候选；fileOnly 要完整集合。这两种不设上限。 */
+  const refCap = (!memberMode && wantFileId < 0) ? limit * 4 : 0;
+  let refEarlyStop = false;
+  let raw = d.references(want, pool, {
+    accept: refAccept,
+    limit: refCap,
+    onStop: () => { refEarlyStop = true; },
+  });
+  /* 按 kind 过滤后为空 → 退回全部（与原来"滤空退回"的语义一致）。 */
+  if (raw.length === 0 && refAccept !== null && !memberMode) raw = d.references(want, pool);
+  if (fileOnly && rel) raw = raw.filter((r) => d.file(r.fileId).rel === rel);
+  /* 成员引用先只留字段访问（`to="field skb"`），再按接收者类型收窄。 */
+  if (memberMode) {
     const fields = raw.filter((r) => String(r.to || '').startsWith('field '));
     if (fields.length > 0) raw = fields;
-  }  if (allowedRefKinds !== null) {
-    const byKind = raw.filter((r) => allowedRefKinds.indexOf(String(r.kind || '')) >= 0);
-    if (byKind.length > 0) raw = byKind;
   }
-  if (ownerType !== '' && (symKind === 'member' || symKind === 'enum_member')) {
+  if (memberMode) {
     raw = await narrowMemberRaw(d, raw, ownerType, rel, Number(opts.line) || 0, pool);
   }
   if (opts.fn) raw = raw.filter((r) => (r.fn || '') === String(opts.fn));
   const total = raw.length;
-  const truncated = total > limit;
+  const truncated = total > limit || refEarlyStop;
   let references = raw.slice(0, limit).map(mapRef);
 
   /* 跨池兜底（G.4「两扇门」）：可跳转、可看代码、标注来源池。 */

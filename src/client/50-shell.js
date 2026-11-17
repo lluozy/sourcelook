@@ -457,6 +457,19 @@
           clearGeometry();
           clear('z-index');
           clear('display');
+          /* SourceLook 入口（D 模式标题栏上的文字按钮）跟在这个菜单后面，
+             间距 14px。位置按菜单的**实际右边缘**算，不写死 px —— DSH 换
+             语言/字号后菜单会变宽，固定 left 就会贴上去或叠住。
+             这是一次布局读，只在菜单重建/重排时发生（调用点已 rAF 节流），
+             不在滚动路径上。 */
+          const rect = node.getBoundingClientRect();
+          if (rect.width > 0) {
+            const want = `${Math.round(rect.right) + 14}px`;
+            const rootStyle = document.documentElement.style;
+            if (rootStyle.getPropertyValue('--sl-pill-left') !== want) {
+              rootStyle.setProperty('--sl-pill-left', want);
+            }
+          }
         }
       }
     }
